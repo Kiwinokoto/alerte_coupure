@@ -105,6 +105,21 @@ def alert_configured() -> bool:
     return bool(SMTP_HOST and SMTP_FROM and ALERT_TO)
 
 
+def alert_summary() -> str:
+    if alert_configured():
+        return "E-mail → " + ", ".join(ALERT_TO)
+    if ALERT_TO:
+        return "E-mail prévu → " + ", ".join(ALERT_TO) + " (SMTP non configuré)"
+    return "Aucune alerte distante configurée"
+
+
+def require_ingest_token(token: str | None) -> None:
+    if not INGEST_TOKEN:
+        raise HTTPException(status_code=503, detail="Ingest token is not configured.")
+    if not token or not hmac.compare_digest(token, INGEST_TOKEN):
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+
 def send_alert(
     kind: str,
     *,
@@ -394,15 +409,27 @@ async def healthz() -> JSONResponse:
     )
 
 
+@app.get("/api/v1/status")
+async def remote_status(
+    x_powerwatch_token: str | None = Header(default=None),
+) -> JSONResponse:
+    require_ingest_token(x_powerwatch_token)
+    return JSONResponse(
+        {
+            "status": "ok",
+            "alert_delivery_configured": alert_configured(),
+            "alert_summary": alert_summary(),
+            "offline_after_seconds": OFFLINE_SECONDS,
+        }
+    )
+
+
 @app.post("/api/v1/events")
 async def ingest_event(
     request: Request,
     x_powerwatch_token: str | None = Header(default=None),
 ) -> JSONResponse:
-    if not INGEST_TOKEN:
-        raise HTTPException(status_code=503, detail="Ingest token is not configured.")
-    if not x_powerwatch_token or not hmac.compare_digest(x_powerwatch_token, INGEST_TOKEN):
-        raise HTTPException(status_code=401, detail="Invalid token.")
+    require_ingest_token(x_powerwatch_token)
 
     try:
         payload = validate_payload(await request.json())

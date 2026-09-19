@@ -4,6 +4,8 @@ PowerWatch is the Android continuation of the original Windows power-loss proof 
 
 The application is intentionally designed first for a **normal Android phone or tablet**. Android Enterprise / Device Owner is not required for this V1. The project targets Android 16 / API 36.
 
+Opening the application does **not** silently arm monitoring. Arming remains an explicit user action. Once armed, the main screen shows that surveillance is active and since when, while the persistent notification confirms background operation. The app also queries the authenticated server status endpoint to display the currently configured remote alert channel/destination.
+
 ## Current behavior
 
 When monitoring is armed:
@@ -53,6 +55,8 @@ https://gauss.kiwinokoto.com/powerwatch-api/api/v1/events
 ```
 
 It requires the matching `X-PowerWatch-Token` configured on the VPS.
+
+The same authenticated server exposes `/api/v1/status` so the phone can display the effective alert route (for example `E-mail → owner@example.test`). Destination changes remain server-admin operations in V1; a probe is deliberately not allowed to reconfigure alert recipients.
 
 ## Webhook payload
 

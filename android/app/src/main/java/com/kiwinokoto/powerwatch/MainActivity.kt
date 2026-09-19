@@ -19,6 +19,9 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
@@ -27,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var powerText: TextView
     private lateinit var batteryText: TextView
     private lateinit var optimizationText: TextView
+    private lateinit var communicationText: TextView
     private lateinit var deliveryText: TextView
     private lateinit var eventsText: TextView
     private lateinit var deviceNameInput: EditText
@@ -49,6 +53,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        WebhookClient.refreshServerStatusAsync(this)
         handler.removeCallbacks(refreshUi)
         handler.post(refreshUi)
     }
@@ -79,18 +84,41 @@ class MainActivity : Activity() {
             setPadding(0, dp(4), 0, dp(20))
         })
 
-        armedText = statusLine()
+        armedText = statusLine().apply {
+            textSize = 20f
+            setTypeface(typeface, Typeface.BOLD)
+        }
         powerText = statusLine()
         batteryText = statusLine()
         optimizationText = statusLine()
-        deliveryText = statusLine()
+
         root.addView(armedText)
         root.addView(powerText)
         root.addView(batteryText)
         root.addView(optimizationText)
+
+        root.addView(sectionTitle("Alertes", dp(18)))
+
+        communicationText = statusLine()
+        deliveryText = statusLine()
+        root.addView(communicationText)
         root.addView(deliveryText)
 
-        root.addView(sectionTitle("Configuration", dp(18)))
+        root.addView(Button(this).apply {
+            text = "Actualiser le canal d’alerte"
+            setOnClickListener {
+                if (!saveSettings()) return@setOnClickListener
+                WebhookClient.refreshServerStatusAsync(this@MainActivity)
+                toast("Vérification du canal d’alerte lancée.")
+            }
+        }, matchWidth())
+
+        root.addView(TextView(this).apply {
+            text = "Le téléphone peut consulter le canal configuré, mais ne peut pas modifier les destinataires du serveur dans cette V1."
+            setPadding(0, dp(4), 0, dp(10))
+        })
+
+        root.addView(sectionTitle("Configuration technique", dp(18)))
 
         deviceNameInput = EditText(this).apply {
             hint = "Nom du site (ex. Restaurant République)"
@@ -114,9 +142,12 @@ class MainActivity : Activity() {
         root.addView(webhookTokenInput, matchWidth())
 
         root.addView(Button(this).apply {
-            text = "Enregistrer"
+            text = "Enregistrer la configuration"
             setOnClickListener {
-                if (saveSettings()) toast("Configuration enregistrée.")
+                if (saveSettings()) {
+                    WebhookClient.refreshServerStatusAsync(this@MainActivity)
+                    toast("Configuration enregistrée.")
+                }
             }
         }, matchWidth())
 
@@ -130,22 +161,25 @@ class MainActivity : Activity() {
         root.addView(sectionTitle("Surveillance", dp(18)))
 
         toggleButton = Button(this).apply {
+            textSize = 18f
             setOnClickListener {
                 if (MonitorPrefs.isArmed(this@MainActivity)) {
                     stopMonitor()
+                    toast("Surveillance désactivée.")
                 } else if (saveSettings()) {
                     startMonitor()
+                    toast("Surveillance activée. La notification PowerWatch doit rester visible.")
                 }
             }
         }
         root.addView(toggleButton, matchWidth())
 
         root.addView(Button(this).apply {
-            text = "Tester le webhook"
+            text = "Tester l’alerte serveur"
             setOnClickListener {
                 if (!saveSettings()) return@setOnClickListener
                 if (MonitorPrefs.webhookUrl(this@MainActivity).isBlank()) {
-                    toast("Configure d’abord un webhook HTTPS.")
+                    toast("Configure d’abord le serveur PowerWatch.")
                     return@setOnClickListener
                 }
                 WebhookClient.sendAsync(
@@ -159,7 +193,7 @@ class MainActivity : Activity() {
         }, matchWidth())
 
         root.addView(TextView(this).apply {
-            text = "La surveillance utilise un service Android de premier plan. Une notification persistante doit rester visible lorsqu’elle est armée."
+            text = "Quand la surveillance est active, une notification persistante confirme que PowerWatch fonctionne même écran éteint."
             setPadding(0, dp(10), 0, dp(10))
         })
 
@@ -209,7 +243,17 @@ class MainActivity : Activity() {
         val powerManager = getSystemService(PowerManager::class.java)
         val unrestricted = powerManager.isIgnoringBatteryOptimizations(packageName)
 
-        armedText.text = if (armed) "Surveillance : ACTIVE" else "Surveillance : arrêtée"
+        armedText.text = if (armed) {
+            val since = formatArmedSince(MonitorPrefs.armedSince(this))
+            if (since == null) {
+                "✓ SURVEILLANCE ACTIVE"
+            } else {
+                "✓ SURVEILLANCE ACTIVE depuis $since"
+            }
+        } else {
+            "Surveillance arrêtée"
+        }
+
         powerText.text = "Secteur : " + when (snapshot.externalPower) {
             true -> "présent"
             false -> "ABSENT"
@@ -221,9 +265,23 @@ class MainActivity : Activity() {
         } else {
             "Optimisation batterie : Android peut appliquer des restrictions"
         }
-        deliveryText.text = "Dernier envoi : " + MonitorPrefs.lastDelivery(this)
+        communicationText.text = MonitorPrefs.remoteAlertSummary(this)
+        deliveryText.text = "Dernier contact serveur : " + MonitorPrefs.lastDelivery(this)
         eventsText.text = EventLog.recent(this)
-        toggleButton.text = if (armed) "Désactiver la surveillance" else "Activer la surveillance"
+        toggleButton.text = if (armed) {
+            "Désactiver la surveillance"
+        } else {
+            "Activer la surveillance"
+        }
+    }
+
+    private fun formatArmedSince(value: String?): String? {
+        if (value.isNullOrBlank()) return null
+        return runCatching {
+            Instant.parse(value)
+                .atZone(ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
+        }.getOrNull()
     }
 
     private fun saveSettings(): Boolean {

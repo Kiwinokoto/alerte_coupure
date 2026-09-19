@@ -56,6 +56,74 @@ object WebhookClient {
         }
     }
 
+    fun refreshServerStatusAsync(context: Context) {
+        val appContext = context.applicationContext
+        val eventsUrl = MonitorPrefs.webhookUrl(appContext)
+        val statusUrl = statusEndpoint(eventsUrl)
+
+        if (statusUrl == null) {
+            MonitorPrefs.setRemoteAlertSummary(
+                appContext,
+                if (eventsUrl.isBlank()) {
+                    "Aucune alerte distante configurée"
+                } else {
+                    "Canal d’alerte : endpoint personnalisé, état non disponible"
+                }
+            )
+            return
+        }
+
+        executor.execute {
+            try {
+                val connection = (URL(statusUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 10_000
+                    readTimeout = 10_000
+                    setRequestProperty("Accept", "application/json")
+                    setRequestProperty("User-Agent", "PowerWatch/0.1.0")
+                    MonitorPrefs.webhookToken(appContext).takeIf { it.isNotBlank() }?.let {
+                        setRequestProperty("X-PowerWatch-Token", it)
+                    }
+                }
+
+                try {
+                    val code = connection.responseCode
+                    if (code !in 200..299) {
+                        MonitorPrefs.setRemoteAlertSummary(
+                            appContext,
+                            "Canal d’alerte : serveur joignable mais configuration inaccessible (HTTP $code)"
+                        )
+                        return@execute
+                    }
+
+                    val response = connection.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(response)
+                    MonitorPrefs.setRemoteAlertSummary(
+                        appContext,
+                        json.optString(
+                            "alert_summary",
+                            "Canal d’alerte : réponse serveur incomplète"
+                        )
+                    )
+                } finally {
+                    connection.disconnect()
+                }
+            } catch (error: Exception) {
+                MonitorPrefs.setRemoteAlertSummary(
+                    appContext,
+                    "Canal d’alerte : serveur temporairement injoignable"
+                )
+            }
+        }
+    }
+
+    private fun statusEndpoint(eventsEndpoint: String): String? {
+        if (eventsEndpoint.isBlank()) return null
+        val suffix = "/api/v1/events"
+        if (!eventsEndpoint.endsWith(suffix)) return null
+        return eventsEndpoint.removeSuffix(suffix) + "/api/v1/status"
+    }
+
     private fun post(
         context: Context,
         endpoint: String,

@@ -31,6 +31,28 @@ class PowerWatchServerTests(unittest.TestCase):
             "android_sdk": 36,
         }
 
+    def test_alert_summary_exposes_configured_email_destination(self):
+        with (
+            mock.patch.object(powerwatch, "SMTP_HOST", "smtp.example.test"),
+            mock.patch.object(powerwatch, "SMTP_FROM", "powerwatch@example.test"),
+            mock.patch.object(powerwatch, "ALERT_TO", ["owner@example.test"]),
+        ):
+            self.assertEqual(
+                powerwatch.alert_summary(),
+                "E-mail → owner@example.test",
+            )
+
+    def test_alert_summary_is_explicit_when_unconfigured(self):
+        with (
+            mock.patch.object(powerwatch, "SMTP_HOST", ""),
+            mock.patch.object(powerwatch, "SMTP_FROM", ""),
+            mock.patch.object(powerwatch, "ALERT_TO", []),
+        ):
+            self.assertEqual(
+                powerwatch.alert_summary(),
+                "Aucune alerte distante configurée",
+            )
+
     def test_monitoring_started_arms_device(self):
         previous, recovered = powerwatch.record_event(
             self.payload("monitoring_started", True)

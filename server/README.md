@@ -21,6 +21,12 @@ The default Android heartbeat is every 2 minutes. The server marks an armed prob
 
 Returns backend health and whether outbound alert delivery is configured.
 
+### `GET /api/v1/status`
+
+Requires the same `X-PowerWatch-Token` as event ingestion.
+
+Returns whether alert delivery is configured and a human-readable summary such as `E-mail → owner@example.test`. This endpoint is intended for the phone UI so the operator can immediately see how alerts will be delivered.
+
 ### `POST /api/v1/events`
 
 Requires:
@@ -31,6 +37,8 @@ Content-Type: application/json
 ```
 
 The token is configured only through the server environment and must not be committed.
+
+Alert destinations remain server-admin configuration in V1. The phone can read the effective channel/destination but cannot change it; configuration writes should get a separate admin authorization model before they are exposed remotely.
 
 ## Alert delivery
 
