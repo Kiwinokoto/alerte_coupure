@@ -5,7 +5,7 @@ import smtplib
 import sqlite3
 import threading
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
@@ -57,7 +57,7 @@ def connect() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    with connect() as db:
+    with closing(connect()) as db, db:
         db.executescript(
             """
             CREATE TABLE IF NOT EXISTS devices (
@@ -219,7 +219,7 @@ def record_event(payload: dict[str, Any]) -> tuple[sqlite3.Row | None, bool]:
     reason = str(payload.get("reason", ""))[:500]
     event_timestamp = str(payload.get("timestamp_utc", ""))[:100]
 
-    with connect() as db:
+    with closing(connect()) as db, db:
         previous = db.execute(
             "SELECT * FROM devices WHERE installation_id = ?",
             (installation_id,),
@@ -344,7 +344,7 @@ def watchdog_once(now_timestamp: float | None = None) -> list[str]:
     cutoff = (time.time() if now_timestamp is None else now_timestamp) - OFFLINE_SECONDS
     stale: list[sqlite3.Row] = []
 
-    with connect() as db:
+    with closing(connect()) as db, db:
         rows = db.execute(
             """
             SELECT * FROM devices

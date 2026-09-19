@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
@@ -61,7 +62,7 @@ class PowerWatchServerTests(unittest.TestCase):
         self.assertIsNone(previous)
         self.assertFalse(recovered)
 
-        with powerwatch.connect() as db:
+        with closing(powerwatch.connect()) as db, db:
             row = db.execute(
                 "SELECT armed, external_power FROM devices WHERE installation_id = ?",
                 ("test-device",),
@@ -90,7 +91,7 @@ class PowerWatchServerTests(unittest.TestCase):
         powerwatch.record_event(self.payload("monitoring_started", True))
         old = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
 
-        with powerwatch.connect() as db:
+        with closing(powerwatch.connect()) as db, db:
             db.execute(
                 "UPDATE devices SET last_seen = ? WHERE installation_id = ?",
                 (old, "test-device"),
@@ -104,7 +105,7 @@ class PowerWatchServerTests(unittest.TestCase):
         self.assertEqual(stale, ["test-device"])
         self.assertEqual(alert.call_args.args[0], "probe_offline")
 
-        with powerwatch.connect() as db:
+        with closing(powerwatch.connect()) as db, db:
             row = db.execute(
                 "SELECT offline_alerted FROM devices WHERE installation_id = ?",
                 ("test-device",),
@@ -116,7 +117,7 @@ class PowerWatchServerTests(unittest.TestCase):
         powerwatch.record_event(self.payload("monitoring_stopped", True))
         old = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
 
-        with powerwatch.connect() as db:
+        with closing(powerwatch.connect()) as db, db:
             db.execute(
                 "UPDATE devices SET last_seen = ? WHERE installation_id = ?",
                 (old, "test-device"),
@@ -132,7 +133,7 @@ class PowerWatchServerTests(unittest.TestCase):
 
     def test_first_event_after_offline_is_recovery(self):
         powerwatch.record_event(self.payload("monitoring_started", True))
-        with powerwatch.connect() as db:
+        with closing(powerwatch.connect()) as db, db:
             db.execute(
                 "UPDATE devices SET offline_alerted = 1 WHERE installation_id = ?",
                 ("test-device",),
