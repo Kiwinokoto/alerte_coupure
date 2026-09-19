@@ -8,6 +8,7 @@ object MonitorPrefs {
     private const val KEY_ARMED = "armed"
     private const val KEY_DEVICE_NAME = "device_name"
     private const val KEY_WEBHOOK_URL = "webhook_url"
+    private const val KEY_WEBHOOK_TOKEN = "webhook_token"
     private const val KEY_INSTALLATION_ID = "installation_id"
     private const val KEY_LAST_POWER = "last_external_power"
     private const val KEY_LAST_EVENT = "last_event"
@@ -35,6 +36,13 @@ object MonitorPrefs {
 
     fun setWebhookUrl(context: Context, value: String) {
         prefs(context).edit().putString(KEY_WEBHOOK_URL, value.trim()).apply()
+    }
+
+    fun webhookToken(context: Context): String =
+        prefs(context).getString(KEY_WEBHOOK_TOKEN, "") ?: ""
+
+    fun setWebhookToken(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_WEBHOOK_TOKEN, value.trim()).apply()
     }
 
     fun installationId(context: Context): String {

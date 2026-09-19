@@ -2,7 +2,7 @@
 
 PowerWatch is the Android continuation of the original Windows power-loss proof of concept in this repository.
 
-The application is intentionally designed first for a **normal Android phone or tablet**. Android Enterprise / Device Owner is not required for this V1. The project targets Android 16 / API 36 so it is aligned with the current Google Play target requirement for new mobile apps.
+The application is intentionally designed first for a **normal Android phone or tablet**. Android Enterprise / Device Owner is not required for this V1. The project targets Android 16 / API 36.
 
 ## Current behavior
 
@@ -10,7 +10,7 @@ When monitoring is armed:
 
 1. `MonitorService` runs as a foreground service with a persistent notification.
 2. It listens for Android power-connected / power-disconnected broadcasts.
-3. It also re-reads `ACTION_BATTERY_CHANGED / EXTRA_PLUGGED` every 30 seconds as a consistency check.
+3. It re-reads `ACTION_BATTERY_CHANGED / EXTRA_PLUGGED` every 30 seconds as a consistency check.
 4. A change must remain stable for 15 seconds before it becomes an outage/restoration event.
 5. The transition is written to the local event log.
 6. If an HTTPS webhook is configured, the event is posted remotely.
@@ -29,7 +29,7 @@ Requirements:
 
 Open the `android/` directory as the project in Android Studio, let Gradle sync, then build/install the `app` module.
 
-This first commit intentionally does not include a generated Gradle wrapper binary. Android Studio can sync the project using the configured Android Gradle Plugin; adding a wrapper is the next build-hardening step once the project has been built on the development machine.
+The repository does not yet contain a generated Gradle wrapper binary. Android Studio can sync the project using the configured Android Gradle Plugin; generating and committing the wrapper after the first workstation build remains a build-hardening task.
 
 ## First test
 
@@ -37,14 +37,22 @@ This first commit intentionally does not include a generated Gradle wrapper bina
 2. Grant notification permission.
 3. Open the battery-optimization settings from the app and configure the test device so PowerWatch is not aggressively restricted.
 4. Enter a device/site name.
-5. Optionally enter an HTTPS webhook.
+5. Enter the HTTPS endpoint and server token if remote monitoring is enabled.
 6. Tap **Activer la surveillance**.
 7. Verify that the persistent PowerWatch notification is visible.
 8. Turn the screen off.
 9. Remove mains power from the charger without touching the USB cable.
-10. After 15 seconds, reopen the app and verify a `COUPURE SECTEUR` event.
+10. After 15 seconds, verify a `COUPURE SECTEUR` event.
 11. Restore mains power and verify `COURANT RÉTABLI`.
 12. Reboot the phone while monitoring is armed and verify that the notification returns automatically.
+
+The current development backend endpoint is:
+
+```text
+https://gauss.kiwinokoto.com/powerwatch-api/api/v1/events
+```
+
+It requires the matching `X-PowerWatch-Token` configured on the VPS.
 
 ## Webhook payload
 
@@ -60,7 +68,7 @@ Example:
   "external_power": false,
   "battery_percent": 96,
   "reason": "broadcast:android.intent.action.ACTION_POWER_DISCONNECTED",
-  "android_sdk": 35
+  "android_sdk": 36
 }
 ```
 
@@ -73,19 +81,17 @@ Events currently emitted:
 - `heartbeat`
 - `test`
 
-Power-loss/restoration and manual events retry delivery a few times so a Wi-Fi-to-mobile-data transition has time to complete. Heartbeats use a single attempt.
+Power-loss/restoration and manual events retry delivery a few times so a Wi-Fi-to-mobile-data transition has time to complete. Heartbeats use a single attempt. The server also compares heartbeat state with the previous state, so a later heartbeat can recover a power transition whose explicit event could not be delivered.
 
-## What V1 does not yet solve
+## Remaining V1 work
 
-- no production alert backend is included yet;
-- no direct SMS sending (avoids Google Play SMS-permission constraints);
-- no signed release APK/AAB pipeline yet;
-- no Device Owner / Android Enterprise mode;
-- no OEM-specific hardening for Samsung/Xiaomi/etc.;
-- no server-side liveness timeout yet;
-- no long-duration device qualification tests yet.
-
-Those are deliberate next steps. The first objective is to establish whether a normal Android foreground service is reliable enough on a small set of supported phones before adding enterprise-device management.
+- compile the first APK on a machine with Android SDK 36;
+- perform long-duration tests on physical phones;
+- configure and test outbound alert delivery;
+- generate/commit the Gradle wrapper;
+- decide the small set of officially supported phone models;
+- assign a dedicated production hostname;
+- add Device Owner only if normal-Android reliability testing shows a real need.
 
 ## Reliability test plan
 
@@ -104,4 +110,4 @@ Before calling this production-ready, test at least:
 - notification permission denied;
 - battery saver / vendor-specific battery restrictions.
 
-The long-term goal is measured reliability, not merely "it worked once on one phone."
+The goal is measured reliability, not merely "it worked once on one phone."

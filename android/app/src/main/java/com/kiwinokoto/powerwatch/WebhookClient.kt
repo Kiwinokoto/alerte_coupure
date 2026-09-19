@@ -69,14 +69,8 @@ object WebhookClient {
             put("timestamp_utc", Instant.now().toString())
             put("device_name", MonitorPrefs.deviceName(context))
             put("installation_id", MonitorPrefs.installationId(context))
-            put(
-                "external_power",
-                snapshot.externalPower ?: JSONObject.NULL
-            )
-            put(
-                "battery_percent",
-                snapshot.batteryPercent ?: JSONObject.NULL
-            )
+            put("external_power", snapshot.externalPower ?: JSONObject.NULL)
+            put("battery_percent", snapshot.batteryPercent ?: JSONObject.NULL)
             put("reason", reason)
             put("android_sdk", Build.VERSION.SDK_INT)
         }.toString()
@@ -89,6 +83,9 @@ object WebhookClient {
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", "PowerWatch/0.1.0")
+            MonitorPrefs.webhookToken(context).takeIf { it.isNotBlank() }?.let {
+                setRequestProperty("X-PowerWatch-Token", it)
+            }
         }
 
         try {

@@ -1,0 +1,39 @@
+services:
+  api:
+    build: .
+    container_name: powerwatch-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+    expose:
+      - "8000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_network"
+      - "traefik.http.routers.powerwatch-api.rule=Host(`gauss.kiwinokoto.com`) && PathPrefix(`/powerwatch-api`)"
+      - "traefik.http.routers.powerwatch-api.priority=200"
+      - "traefik.http.routers.powerwatch-api.entrypoints=websecure"
+      - "traefik.http.routers.powerwatch-api.tls=true"
+      - "traefik.http.routers.powerwatch-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.powerwatch-api.middlewares=powerwatch-strip"
+      - "traefik.http.middlewares.powerwatch-strip.stripprefix.prefixes=/powerwatch-api"
+      - "traefik.http.services.powerwatch-api.loadbalancer.server.port=8000"
+    networks:
+      - traefik_network
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+networks:
+  traefik_network:
+    external: true
+    name: traefik_network

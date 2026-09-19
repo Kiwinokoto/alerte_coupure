@@ -31,6 +31,7 @@ class MainActivity : Activity() {
     private lateinit var eventsText: TextView
     private lateinit var deviceNameInput: EditText
     private lateinit var webhookInput: EditText
+    private lateinit var webhookTokenInput: EditText
     private lateinit var toggleButton: Button
 
     private val refreshUi = object : Runnable {
@@ -66,12 +67,11 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(24), dp(20), dp(32))
         }
 
-        val title = TextView(this).apply {
+        root.addView(TextView(this).apply {
             text = "PowerWatch"
             textSize = 28f
             setTypeface(typeface, Typeface.BOLD)
-        }
-        root.addView(title)
+        })
 
         root.addView(TextView(this).apply {
             text = "Transforme ce téléphone en moniteur de coupure secteur."
@@ -84,7 +84,6 @@ class MainActivity : Activity() {
         batteryText = statusLine()
         optimizationText = statusLine()
         deliveryText = statusLine()
-
         root.addView(armedText)
         root.addView(powerText)
         root.addView(batteryText)
@@ -107,23 +106,26 @@ class MainActivity : Activity() {
         }
         root.addView(webhookInput, matchWidth())
 
-        val saveButton = Button(this).apply {
+        webhookTokenInput = EditText(this).apply {
+            hint = "Token du serveur (optionnel)"
+            setText(MonitorPrefs.webhookToken(this@MainActivity))
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        root.addView(webhookTokenInput, matchWidth())
+
+        root.addView(Button(this).apply {
             text = "Enregistrer"
             setOnClickListener {
-                if (saveSettings()) {
-                    toast("Configuration enregistrée.")
-                }
+                if (saveSettings()) toast("Configuration enregistrée.")
             }
-        }
-        root.addView(saveButton, matchWidth())
+        }, matchWidth())
 
-        val batterySettingsButton = Button(this).apply {
+        root.addView(Button(this).apply {
             text = "Ouvrir les réglages d’optimisation batterie"
             setOnClickListener {
                 startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
             }
-        }
-        root.addView(batterySettingsButton, matchWidth())
+        }, matchWidth())
 
         root.addView(sectionTitle("Surveillance", dp(18)))
 
@@ -138,7 +140,7 @@ class MainActivity : Activity() {
         }
         root.addView(toggleButton, matchWidth())
 
-        val testButton = Button(this).apply {
+        root.addView(Button(this).apply {
             text = "Tester le webhook"
             setOnClickListener {
                 if (!saveSettings()) return@setOnClickListener
@@ -154,8 +156,7 @@ class MainActivity : Activity() {
                 )
                 toast("Test lancé.")
             }
-        }
-        root.addView(testButton, matchWidth())
+        }, matchWidth())
 
         root.addView(TextView(this).apply {
             text = "La surveillance utilise un service Android de premier plan. Une notification persistante doit rester visible lorsqu’elle est armée."
@@ -171,7 +172,7 @@ class MainActivity : Activity() {
         }
         root.addView(eventsText, matchWidth())
 
-        val scroll = ScrollView(this).apply {
+        setContentView(ScrollView(this).apply {
             addView(
                 root,
                 ViewGroup.LayoutParams(
@@ -179,8 +180,7 @@ class MainActivity : Activity() {
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
             )
-        }
-        setContentView(scroll)
+        })
     }
 
     private fun statusLine(): TextView =
@@ -209,12 +209,7 @@ class MainActivity : Activity() {
         val powerManager = getSystemService(PowerManager::class.java)
         val unrestricted = powerManager.isIgnoringBatteryOptimizations(packageName)
 
-        armedText.text = if (armed) {
-            "Surveillance : ACTIVE"
-        } else {
-            "Surveillance : arrêtée"
-        }
-
+        armedText.text = if (armed) "Surveillance : ACTIVE" else "Surveillance : arrêtée"
         powerText.text = "Secteur : " + when (snapshot.externalPower) {
             true -> "présent"
             false -> "ABSENT"
@@ -234,6 +229,7 @@ class MainActivity : Activity() {
     private fun saveSettings(): Boolean {
         val name = deviceNameInput.text.toString().trim().ifBlank { "Restaurant" }
         val webhook = webhookInput.text.toString().trim()
+        val token = webhookTokenInput.text.toString().trim()
 
         if (webhook.isNotBlank() && !webhook.startsWith("https://")) {
             toast("La V1 n’accepte que les webhooks HTTPS.")
@@ -242,6 +238,7 @@ class MainActivity : Activity() {
 
         MonitorPrefs.setDeviceName(this, name)
         MonitorPrefs.setWebhookUrl(this, webhook)
+        MonitorPrefs.setWebhookToken(this, token)
         return true
     }
 
@@ -256,9 +253,10 @@ class MainActivity : Activity() {
     }
 
     private fun stopMonitor() {
-        val intent = Intent(this, MonitorService::class.java)
-            .setAction(MonitorService.ACTION_STOP)
-        startService(intent)
+        startService(
+            Intent(this, MonitorService::class.java)
+                .setAction(MonitorService.ACTION_STOP)
+        )
     }
 
     private fun requestNotificationPermissionIfNeeded() {
