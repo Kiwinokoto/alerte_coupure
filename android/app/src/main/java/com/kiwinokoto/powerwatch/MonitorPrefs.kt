@@ -48,14 +48,16 @@ object MonitorPrefs {
     }
 
     fun webhookUrl(context: Context): String =
-        prefs(context).getString(KEY_WEBHOOK_URL, "") ?: ""
+        prefs(context).getString(KEY_WEBHOOK_URL, null)
+            ?: BuildConfig.POWERWATCH_DEFAULT_WEBHOOK_URL
 
     fun setWebhookUrl(context: Context, value: String) {
         prefs(context).edit().putString(KEY_WEBHOOK_URL, value.trim()).apply()
     }
 
     fun webhookToken(context: Context): String =
-        prefs(context).getString(KEY_WEBHOOK_TOKEN, "") ?: ""
+        prefs(context).getString(KEY_WEBHOOK_TOKEN, null)
+            ?: BuildConfig.POWERWATCH_DEFAULT_WEBHOOK_TOKEN
 
     fun setWebhookToken(context: Context, value: String) {
         prefs(context).edit().putString(KEY_WEBHOOK_TOKEN, value.trim()).apply()
