@@ -55,7 +55,7 @@ class PowerWatchServerTests(unittest.TestCase):
             )
 
     def test_monitoring_started_arms_device(self):
-        previous, recovered = powerwatch.record_event(
+        previous, recovered, duplicate = powerwatch.record_event(
             self.payload("monitoring_started", True)
         )
 
@@ -73,7 +73,7 @@ class PowerWatchServerTests(unittest.TestCase):
 
     def test_heartbeat_can_recover_missed_power_transition(self):
         powerwatch.record_event(self.payload("monitoring_started", True))
-        previous, recovered = powerwatch.record_event(
+        previous, recovered, duplicate = powerwatch.record_event(
             self.payload("heartbeat", False)
         )
 
@@ -139,7 +139,7 @@ class PowerWatchServerTests(unittest.TestCase):
                 ("test-device",),
             )
 
-        previous, recovered = powerwatch.record_event(
+        previous, recovered, duplicate = powerwatch.record_event(
             self.payload("heartbeat", True)
         )
 
@@ -152,6 +152,26 @@ class PowerWatchServerTests(unittest.TestCase):
             )
 
         self.assertEqual(alert.call_args.args[0], "probe_online")
+
+
+    def test_duplicate_event_id_is_recorded_once(self):
+        payload = self.payload("power_lost", False)
+        payload["event_id"] = "stable-event-id"
+
+        previous, recovered, duplicate = powerwatch.record_event(payload)
+        self.assertFalse(duplicate)
+        with mock.patch.object(powerwatch, "send_alert") as alert:
+            powerwatch.handle_alerts(payload, previous, recovered)
+        alert.assert_called_once()
+
+        _, _, duplicate = powerwatch.record_event(payload)
+        self.assertTrue(duplicate)
+        with closing(powerwatch.connect()) as db:
+            count = db.execute(
+                "SELECT COUNT(*) FROM events WHERE event_id = ?",
+                ("stable-event-id",),
+            ).fetchone()[0]
+        self.assertEqual(count, 1)
 
 
 if __name__ == "__main__":

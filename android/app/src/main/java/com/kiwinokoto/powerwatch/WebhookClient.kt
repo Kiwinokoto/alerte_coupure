@@ -6,6 +6,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
+import java.util.UUID
 import java.util.concurrent.Executors
 
 object WebhookClient {
@@ -24,6 +25,9 @@ object WebhookClient {
             return
         }
 
+        val eventId = UUID.randomUUID().toString()
+        val eventTimestamp = Instant.now().toString()
+
         executor.execute {
             val retries = if (eventType == "heartbeat") {
                 longArrayOf(0L)
@@ -35,7 +39,7 @@ object WebhookClient {
             for (delay in retries) {
                 if (delay > 0) Thread.sleep(delay)
                 try {
-                    val code = post(appContext, url, eventType, snapshot, reason)
+                    val code = post(appContext, url, eventType, snapshot, reason, eventId, eventTimestamp)
                     if (code in 200..299) {
                         MonitorPrefs.setLastDelivery(
                             appContext,
@@ -129,12 +133,15 @@ object WebhookClient {
         endpoint: String,
         eventType: String,
         snapshot: PowerSnapshot,
-        reason: String
+        reason: String,
+        eventId: String,
+        eventTimestamp: String
     ): Int {
         val payload = JSONObject().apply {
             put("schema_version", 1)
             put("event", eventType)
-            put("timestamp_utc", Instant.now().toString())
+            put("event_id", eventId)
+            put("timestamp_utc", eventTimestamp)
             put("device_name", MonitorPrefs.deviceName(context))
             put("installation_id", MonitorPrefs.installationId(context))
             put("external_power", snapshot.externalPower ?: JSONObject.NULL)

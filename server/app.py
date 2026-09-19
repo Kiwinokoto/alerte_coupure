@@ -80,13 +80,18 @@ def init_db() -> None:
                 external_power INTEGER,
                 battery_percent INTEGER,
                 reason TEXT,
-                payload_json TEXT NOT NULL
+                payload_json TEXT NOT NULL,
+                event_id TEXT
             );
 
             CREATE INDEX IF NOT EXISTS idx_events_installation_received
                 ON events (installation_id, received_at DESC);
             """
         )
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(events)")}
+        if "event_id" not in columns:
+            db.execute("ALTER TABLE events ADD COLUMN event_id TEXT")
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_events_event_id ON events (event_id) WHERE event_id IS NOT NULL")
 
 
 def bool_to_db(value: Any) -> int | None:
@@ -209,7 +214,7 @@ def validate_payload(payload: Any) -> dict[str, Any]:
     return payload
 
 
-def record_event(payload: dict[str, Any]) -> tuple[sqlite3.Row | None, bool]:
+def record_event(payload: dict[str, Any]) -> tuple[sqlite3.Row | None, bool, bool]:
     received_at = utc_now()
     installation_id = str(payload["installation_id"])
     device_name = str(payload["device_name"])
@@ -218,6 +223,7 @@ def record_event(payload: dict[str, Any]) -> tuple[sqlite3.Row | None, bool]:
     battery_percent = payload.get("battery_percent")
     reason = str(payload.get("reason", ""))[:500]
     event_timestamp = str(payload.get("timestamp_utc", ""))[:100]
+    event_id = str(payload.get("event_id", "")).strip()[:128] or None
 
     with closing(connect()) as db, db:
         previous = db.execute(
@@ -232,12 +238,12 @@ def record_event(payload: dict[str, Any]) -> tuple[sqlite3.Row | None, bool]:
         else:
             armed = int(previous["armed"]) if previous is not None else 0
 
-        db.execute(
+        event_insert = db.execute(
             """
-            INSERT INTO events (
+            INSERT OR IGNORE INTO events (
                 received_at, event_timestamp, installation_id, device_name,
-                event_type, external_power, battery_percent, reason, payload_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                event_type, external_power, battery_percent, reason, payload_json, event_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 received_at,
@@ -249,8 +255,12 @@ def record_event(payload: dict[str, Any]) -> tuple[sqlite3.Row | None, bool]:
                 battery_percent,
                 reason,
                 json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                event_id,
             ),
         )
+
+        if event_id is not None and event_insert.rowcount == 0:
+            return None, False, True
 
         db.execute(
             """
@@ -277,7 +287,7 @@ def record_event(payload: dict[str, Any]) -> tuple[sqlite3.Row | None, bool]:
         )
 
     recovered = previous is not None and bool(previous["offline_alerted"])
-    return previous, recovered
+    return previous, recovered, False
 
 
 def handle_alerts(payload: dict[str, Any], previous: sqlite3.Row | None, recovered: bool) -> None:
@@ -436,7 +446,8 @@ async def ingest_event(
     except json.JSONDecodeError as error:
         raise HTTPException(status_code=400, detail="Invalid JSON.") from error
 
-    previous, recovered = record_event(payload)
-    handle_alerts(payload, previous, recovered)
+    previous, recovered, duplicate = record_event(payload)
+    if not duplicate:
+        handle_alerts(payload, previous, recovered)
 
-    return JSONResponse({"status": "ok", "server_time": utc_now()})
+    return JSONResponse({"status": "ok", "duplicate": duplicate, "server_time": utc_now()})
