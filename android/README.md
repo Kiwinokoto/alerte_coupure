@@ -103,13 +103,23 @@ Power-loss/restoration and manual events retry delivery a few times so a Wi-Fi-t
 ## Remaining V1 work
 
 - continue physical-device and long-duration reliability testing;
-- perform long-duration tests on physical phones;
 - configure and test outbound alert delivery;
 - design an explicit **Désarmer et quitter** action with a danger-style confirmation; swiping the UI away must continue to leave an armed foreground monitor running;
 - generate/commit the Gradle wrapper;
 - decide the small set of officially supported phone models;
 - assign a dedicated production hostname;
 - add Device Owner only if normal-Android reliability testing shows a real need.
+
+## Post-V1 / productisation
+
+The current V1 is an Angela-first proof of concept. If reliability testing validates the approach, a business-ready follow-up should avoid exposing webhook URLs or shared probe tokens to ordinary users. Candidate work includes:
+
+- simple onboarding with an account, activation code or pre-provisioned device identity;
+- automatic per-device/site provisioning instead of manual endpoint/token entry;
+- secure separation between probe credentials and administrator credentials;
+- customer/site management with configurable alert recipients and channels;
+- production signing, release distribution and update strategy;
+- deciding whether this remains **PowerWatch V2** or becomes a separate product built from the validated PowerWatch core.
 
 ## Reliability test plan
 
