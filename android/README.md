@@ -21,6 +21,19 @@ When monitoring is armed:
 
 The monitor uses Android's **external power state**. A full battery that has temporarily stopped charging should therefore remain "mains present" as long as the device is still externally powered.
 
+## Install a prebuilt APK
+
+For testers who receive a PowerWatch APK directly rather than through an app store:
+
+1. Copy or download the `.apk` file to the Android device.
+2. Open it from **Files / Downloads** (or from the browser that downloaded it).
+3. Android may run a security scan or show a Play Protect prompt before installation. This is a normal Android security check for sideloaded applications.
+4. If prompted, allow **Install unknown apps** for the specific app opening the APK (for example Files or the browser). On Android 8.0+, this permission is granted per source app rather than as one global switch.
+5. Confirm **Install** or **Update**.
+6. Open PowerWatch and grant the permissions it requests.
+
+Only install APKs obtained from a trusted source. A tester may revoke the **Install unknown apps** permission again after installation if it is no longer needed.
+
 ## Build
 
 Requirements:
@@ -89,7 +102,7 @@ Power-loss/restoration and manual events retry delivery a few times so a Wi-Fi-t
 
 ## Remaining V1 work
 
-- compile the first APK on a machine with Android SDK 36;
+- continue physical-device and long-duration reliability testing;
 - perform long-duration tests on physical phones;
 - configure and test outbound alert delivery;
 - generate/commit the Gradle wrapper;
