@@ -15,7 +15,6 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
-import java.time.Instant
 
 class MonitorService : Service() {
     companion object {
@@ -103,9 +102,14 @@ class MonitorService : Service() {
 
         MonitorPrefs.setArmed(this, true)
         val snapshot = PowerSnapshot.read(this)
-        stablePower = MonitorPrefs.lastExternalPower(this) ?: snapshot.externalPower
 
+        stablePower = if (intent?.action == ACTION_START) {
+            snapshot.externalPower
+        } else {
+            MonitorPrefs.lastExternalPower(this) ?: snapshot.externalPower
+        }
         stablePower?.let { MonitorPrefs.setLastExternalPower(this, it) }
+
         startInForeground(snapshot)
 
         handler.removeCallbacks(stateCheck)
@@ -248,11 +252,9 @@ class MonitorService : Service() {
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .addAction(
-                Notification.Action.Builder(
-                    null,
-                    "Désactiver",
-                    stopIntent
-                ).build()
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Désactiver",
+                stopIntent
             )
             .build()
     }
