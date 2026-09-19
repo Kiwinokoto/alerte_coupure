@@ -144,14 +144,19 @@ class MonitorService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun considerPowerCandidate(candidate: Boolean, reason: String) {
-        pendingTransition?.let(handler::removeCallbacks)
-        pendingTransition = null
-        pendingCandidate = null
-
         if (stablePower == candidate) {
+            pendingTransition?.let(handler::removeCallbacks)
+            pendingTransition = null
+            pendingCandidate = null
             return
         }
 
+        if (pendingCandidate == candidate && pendingTransition != null) {
+            return
+        }
+
+        pendingTransition?.let(handler::removeCallbacks)
+        pendingTransition = null
         pendingCandidate = candidate
         val runnable = Runnable {
             val expected = pendingCandidate ?: return@Runnable
