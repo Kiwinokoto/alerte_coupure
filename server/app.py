@@ -122,6 +122,13 @@ def send_alert(
         "power_absent_on_start": "SURVEILLANCE DÉMARRÉE SANS SECTEUR",
     }.get(kind, kind.upper())
 
+    if not alert_configured():
+        print(
+            f"[powerwatch] alert not configured: {prefix} / {device_name} / {detail}",
+            flush=True,
+        )
+        return
+
     message = EmailMessage()
     message["Subject"] = f"[PowerWatch] {prefix} — {device_name}"
     message["From"] = SMTP_FROM
@@ -140,13 +147,6 @@ def send_alert(
             ]
         )
     )
-
-    if not alert_configured():
-        print(
-            f"[powerwatch] alert not configured: {prefix} / {device_name} / {detail}",
-            flush=True,
-        )
-        return
 
     try:
         if SMTP_PORT == 465:
@@ -325,40 +325,46 @@ def handle_alerts(payload: dict[str, Any], previous: sqlite3.Row | None, recover
         )
 
 
+def watchdog_once(now_timestamp: float | None = None) -> list[str]:
+    cutoff = (time.time() if now_timestamp is None else now_timestamp) - OFFLINE_SECONDS
+    stale: list[sqlite3.Row] = []
+
+    with connect() as db:
+        rows = db.execute(
+            """
+            SELECT * FROM devices
+            WHERE armed = 1 AND offline_alerted = 0
+            """
+        ).fetchall()
+
+        for row in rows:
+            try:
+                last_seen = datetime.fromisoformat(str(row["last_seen"])).timestamp()
+            except ValueError:
+                continue
+            if last_seen < cutoff:
+                db.execute(
+                    "UPDATE devices SET offline_alerted = 1 WHERE installation_id = ?",
+                    (row["installation_id"],),
+                )
+                stale.append(row)
+
+    for row in stale:
+        send_alert(
+            "probe_offline",
+            device_name=str(row["device_name"]),
+            installation_id=str(row["installation_id"]),
+            external_power=db_to_bool(row["external_power"]),
+            battery_percent=row["battery_percent"],
+            detail=f"Aucun heartbeat depuis plus de {OFFLINE_SECONDS} secondes.",
+        )
+
+    return [str(row["installation_id"]) for row in stale]
+
+
 def watchdog_loop() -> None:
     while not _stop_event.wait(WATCHDOG_SECONDS):
-        cutoff = time.time() - OFFLINE_SECONDS
-        stale: list[sqlite3.Row] = []
-
-        with connect() as db:
-            rows = db.execute(
-                """
-                SELECT * FROM devices
-                WHERE armed = 1 AND offline_alerted = 0
-                """
-            ).fetchall()
-
-            for row in rows:
-                try:
-                    last_seen = datetime.fromisoformat(str(row["last_seen"])).timestamp()
-                except ValueError:
-                    continue
-                if last_seen < cutoff:
-                    db.execute(
-                        "UPDATE devices SET offline_alerted = 1 WHERE installation_id = ?",
-                        (row["installation_id"],),
-                    )
-                    stale.append(row)
-
-        for row in stale:
-            send_alert(
-                "probe_offline",
-                device_name=str(row["device_name"]),
-                installation_id=str(row["installation_id"]),
-                external_power=db_to_bool(row["external_power"]),
-                battery_percent=row["battery_percent"],
-                detail=f"Aucun heartbeat depuis plus de {OFFLINE_SECONDS} secondes.",
-            )
+        watchdog_once()
 
 
 @asynccontextmanager

@@ -1,0 +1,135 @@
+import tempfile
+import unittest
+from datetime import datetime, timezone
+from pathlib import Path
+from unittest import mock
+
+import app as powerwatch
+
+
+class PowerWatchServerTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.original_db = powerwatch.DB_PATH
+        powerwatch.DB_PATH = Path(self.temp.name) / "powerwatch.db"
+        powerwatch.init_db()
+
+    def tearDown(self):
+        powerwatch.DB_PATH = self.original_db
+        self.temp.cleanup()
+
+    def payload(self, event, external_power=True):
+        return {
+            "schema_version": 1,
+            "event": event,
+            "timestamp_utc": "2026-09-19T14:30:00Z",
+            "device_name": "Restaurant test",
+            "installation_id": "test-device",
+            "external_power": external_power,
+            "battery_percent": 88,
+            "reason": "unit_test",
+            "android_sdk": 36,
+        }
+
+    def test_monitoring_started_arms_device(self):
+        previous, recovered = powerwatch.record_event(
+            self.payload("monitoring_started", True)
+        )
+
+        self.assertIsNone(previous)
+        self.assertFalse(recovered)
+
+        with powerwatch.connect() as db:
+            row = db.execute(
+                "SELECT armed, external_power FROM devices WHERE installation_id = ?",
+                ("test-device",),
+            ).fetchone()
+
+        self.assertEqual(row["armed"], 1)
+        self.assertEqual(row["external_power"], 1)
+
+    def test_heartbeat_can_recover_missed_power_transition(self):
+        powerwatch.record_event(self.payload("monitoring_started", True))
+        previous, recovered = powerwatch.record_event(
+            self.payload("heartbeat", False)
+        )
+
+        with mock.patch.object(powerwatch, "send_alert") as alert:
+            powerwatch.handle_alerts(
+                self.payload("heartbeat", False),
+                previous,
+                recovered,
+            )
+
+        alert.assert_called_once()
+        self.assertEqual(alert.call_args.args[0], "power_lost")
+
+    def test_watchdog_marks_only_armed_stale_device_offline(self):
+        powerwatch.record_event(self.payload("monitoring_started", True))
+        old = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
+
+        with powerwatch.connect() as db:
+            db.execute(
+                "UPDATE devices SET last_seen = ? WHERE installation_id = ?",
+                (old, "test-device"),
+            )
+
+        with mock.patch.object(powerwatch, "send_alert") as alert:
+            stale = powerwatch.watchdog_once(
+                now_timestamp=datetime(2026, 9, 19, tzinfo=timezone.utc).timestamp()
+            )
+
+        self.assertEqual(stale, ["test-device"])
+        self.assertEqual(alert.call_args.args[0], "probe_offline")
+
+        with powerwatch.connect() as db:
+            row = db.execute(
+                "SELECT offline_alerted FROM devices WHERE installation_id = ?",
+                ("test-device",),
+            ).fetchone()
+        self.assertEqual(row["offline_alerted"], 1)
+
+    def test_stopped_monitor_is_not_marked_offline(self):
+        powerwatch.record_event(self.payload("monitoring_started", True))
+        powerwatch.record_event(self.payload("monitoring_stopped", True))
+        old = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
+
+        with powerwatch.connect() as db:
+            db.execute(
+                "UPDATE devices SET last_seen = ? WHERE installation_id = ?",
+                (old, "test-device"),
+            )
+
+        with mock.patch.object(powerwatch, "send_alert") as alert:
+            stale = powerwatch.watchdog_once(
+                now_timestamp=datetime(2026, 9, 19, tzinfo=timezone.utc).timestamp()
+            )
+
+        self.assertEqual(stale, [])
+        alert.assert_not_called()
+
+    def test_first_event_after_offline_is_recovery(self):
+        powerwatch.record_event(self.payload("monitoring_started", True))
+        with powerwatch.connect() as db:
+            db.execute(
+                "UPDATE devices SET offline_alerted = 1 WHERE installation_id = ?",
+                ("test-device",),
+            )
+
+        previous, recovered = powerwatch.record_event(
+            self.payload("heartbeat", True)
+        )
+
+        self.assertTrue(recovered)
+        with mock.patch.object(powerwatch, "send_alert") as alert:
+            powerwatch.handle_alerts(
+                self.payload("heartbeat", True),
+                previous,
+                recovered,
+            )
+
+        self.assertEqual(alert.call_args.args[0], "probe_online")
+
+
+if __name__ == "__main__":
+    unittest.main()
