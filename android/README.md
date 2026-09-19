@@ -148,6 +148,16 @@ The current V1 is an Angela-first proof of concept. If reliability testing valid
 
 The exact V2/V3 sequencing is deliberately open. The customer-facing status view is likely useful early in productisation; the multi-customer administrator console can come later once accounts, sites and per-installation identities exist. Neither should delay the restaurant-focused V1 reliability work.
 
+## Overnight handoff (2026-09-19 → 2026-09-20)
+
+- **Reference:** `dev/android-v1` at GitHub commit `0b07a05` before this handoff update. VPS clone `/opt/powerwatch` is intentionally left at that same code commit with a three-file uncommitted patch described below.
+- **Completed:** initial soak/reliability work remains stable enough to continue development; productisation/dashboard direction is documented; VPS containers were healthy at the start of this pass.
+- **In progress:** proper retry idempotence. The VPS working tree changes `WebhookClient.kt`, `server/app.py`, and `server/tests/test_app.py`: the Android client creates one stable UUID/timestamp per logical send across retries; the server adds nullable `event_id`, a unique partial index, duplicate detection, and suppresses duplicate alert handling; tests were adapted and a duplicate-event regression test added.
+- **Tests:** server suite passes **8/8** inside the existing `server-api` Docker image with the working tree mounted; `git diff --check` passes; Python compilation passes. Android compilation was **not run** because Gradle is unavailable on the VPS and the repository still has no wrapper.
+- **Important:** the code patch was **not pushed**. HTTPS Git push from the VPS has no credentials. A temporary local commit was immediately reset (only that new unpushed commit; working changes preserved), so there is no divergent local history. The next pass must inspect this working tree before touching these files and should publish the tested patch through an authenticated path rather than recreate it blindly.
+- **Next:** (1) review/publish the idempotence patch; (2) compile Android on a capable host if available; (3) then implement the persistent local outbox/replay using the stable `event_id`; (4) continue degraded-backend/UI work; (5) leave SMS delivery itself for an explicit later decision/test.
+- **Migration/deploy note:** server idempotence adds an `events.event_id` SQLite column and unique partial index through the existing startup `init_db()` path. This is additive/backward-compatible, but do not deploy/restart production merely to apply it during an unattended pass.
+
 ## Reliability test plan
 
 Before calling this production-ready, test at least:
