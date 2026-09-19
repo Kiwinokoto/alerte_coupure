@@ -158,6 +158,20 @@ class MainActivity : Activity() {
             }
         }, matchWidth())
 
+        if (BuildConfig.DEBUG) {
+            root.addView(sectionTitle("Diagnostic Android", dp(18)))
+            root.addView(TextView(this).apply {
+                text = "Outils de diagnostic présents uniquement dans les builds debug."
+                setPadding(0, 0, 0, dp(6))
+            })
+            root.addView(Button(this).apply {
+                text = "Ouvrir les options développeur"
+                setOnClickListener {
+                    openDeveloperSettings()
+                }
+            }, matchWidth())
+        }
+
         root.addView(sectionTitle("Surveillance", dp(18)))
 
         toggleButton = Button(this).apply {
@@ -315,6 +329,16 @@ class MainActivity : Activity() {
             Intent(this, MonitorService::class.java)
                 .setAction(MonitorService.ACTION_STOP)
         )
+    }
+
+    private fun openDeveloperSettings() {
+        val opened = runCatching {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+        }.isSuccess
+
+        if (!opened) {
+            toast("Android refuse d’ouvrir directement les options développeur.")
+        }
     }
 
     private fun requestNotificationPermissionIfNeeded() {
