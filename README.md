@@ -45,3 +45,10 @@ Active Android/server V1 development is currently on `dev/android-v1`.
 ## Safety
 
 PowerWatch is experimental software. It is not a certified safety, refrigeration, electrical-protection, or food-safety device and should not be treated as the sole protection for critical equipment or stock until it has completed long-duration qualification testing.
+
+
+## License
+
+PowerWatch is released under the [MIT License](LICENSE).
+
+You may use, study, modify, redistribute and commercially reuse the code, provided the copyright and license notice are retained. Contributions and sponsorship are welcome.
