@@ -21,6 +21,27 @@ When monitoring is armed:
 
 The monitor uses Android's **external power state**. A full battery that has temporarily stopped charging should therefore remain "mains present" as long as the device is still externally powered.
 
+## Why keep a backend if the phone can detect outages itself?
+
+The phone and the backend cover **different failure modes**:
+
+- the phone is the best place to detect a mains transition immediately, because its own battery keeps it alive when the site loses power;
+- the backend receives events, keeps history and centralizes normal alert delivery;
+- the backend also watches the **absence of heartbeats**. This catches failures the phone cannot report itself, such as the phone dying, the app being killed permanently, the SIM/data path failing, or the entire device becoming unreachable.
+
+The VPS is therefore useful, but it must **not become a single point of failure** for outage detection.
+
+Planned degraded-mode architecture:
+
+1. **Normal path:** phone detects the event → HTTPS backend → configured remote alert channels.
+2. **Local truth always survives:** the phone records the outage/restoration locally even when the backend is unreachable.
+3. **Persistent outbox:** failed events remain queued locally and are replayed to the backend when connectivity returns.
+4. **Direct critical fallback:** if a confirmed power-loss event cannot reach the backend after the normal retry window, the phone should be able to use an independent channel such as a direct SMS through its SIM.
+5. **Symmetric recovery:** if a direct fallback alert was sent for an outage, restoration should also be sent through the fallback channel when the backend remains unavailable.
+6. **Backend-silence warning:** loss of backend connectivity while mains is still present is a degraded state, not a power outage. The UI should show it distinctly and a remote fallback warning, if enabled, should only fire after a sustained timeout to avoid noisy alerts.
+
+This gives the system two complementary safety nets: **the phone can still report a site power failure when the VPS is unavailable, while the VPS can still report that the phone itself has disappeared**.
+
 ## Install a prebuilt APK
 
 For testers who receive a PowerWatch APK directly rather than through an app store:
@@ -104,6 +125,7 @@ Power-loss/restoration and manual events retry delivery a few times so a Wi-Fi-t
 
 - continue physical-device and long-duration reliability testing;
 - configure and test outbound alert delivery;
+- add a persistent on-device event outbox and design/test direct-SMS fallback for confirmed power loss when backend delivery fails;
 - design an explicit **Désarmer et quitter** action with a danger-style confirmation; swiping the UI away must continue to leave an armed foreground monitor running;
 - generate/commit the Gradle wrapper;
 - decide the small set of officially supported phone models;
@@ -128,6 +150,8 @@ Before calling this production-ready, test at least:
 - screen off for multiple nights;
 - battery full / adaptive charging active;
 - Wi-Fi loss with mobile-data fallback;
+- backend unavailable while mains remains present;
+- backend unavailable during a real power loss, including direct fallback alert and later event replay;
 - airplane mode then recovery;
 - app process killed by Android;
 - reboot while armed;
