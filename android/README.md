@@ -105,6 +105,7 @@ Power-loss/restoration and manual events retry delivery a few times so a Wi-Fi-t
 - continue physical-device and long-duration reliability testing;
 - perform long-duration tests on physical phones;
 - configure and test outbound alert delivery;
+- design an explicit **Désarmer et quitter** action with a danger-style confirmation; swiping the UI away must continue to leave an armed foreground monitor running;
 - generate/commit the Gradle wrapper;
 - decide the small set of officially supported phone models;
 - assign a dedicated production hostname;
