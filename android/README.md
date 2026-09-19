@@ -140,8 +140,13 @@ The current V1 is an Angela-first proof of concept. If reliability testing valid
 - automatic per-device/site provisioning instead of manual endpoint/token entry;
 - secure separation between probe credentials and administrator credentials;
 - customer/site management with configurable alert recipients and channels;
+- an authenticated **customer monitoring dashboard** where a restaurant/user can quickly confirm that monitoring is armed, mains is present, the probe has contacted the service recently, backend connectivity is healthy, and recent incidents/alerts are visible;
+- a later **administrator fleet dashboard** showing all customers/sites/probes with health state, last heartbeat/contact, current app version, recent incidents and provisioning/credential status, so operational problems can be spotted without inspecting each device manually;
+- keeping these dashboards observational rather than safety-critical: the phone must continue to detect locally and use its independent degraded/fallback paths even if the web interface or central backend is unavailable;
 - production signing, release distribution and update strategy;
 - deciding whether this remains **PowerWatch V2** or becomes a separate product built from the validated PowerWatch core.
+
+The exact V2/V3 sequencing is deliberately open. The customer-facing status view is likely useful early in productisation; the multi-customer administrator console can come later once accounts, sites and per-installation identities exist. Neither should delay the restaurant-focused V1 reliability work.
 
 ## Reliability test plan
 
