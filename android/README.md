@@ -2,7 +2,7 @@
 
 PowerWatch is the Android continuation of the original Windows power-loss proof of concept in this repository.
 
-The application is intentionally designed first for a **normal Android phone or tablet**. Android Enterprise / Device Owner is not required for this V1.
+The application is intentionally designed first for a **normal Android phone or tablet**. Android Enterprise / Device Owner is not required for this V1. The project targets Android 16 / API 36 so it is aligned with the current Google Play target requirement for new mobile apps.
 
 ## Current behavior
 
@@ -24,7 +24,7 @@ The monitor uses Android's **external power state**. A full battery that has tem
 Requirements:
 
 - Android Studio with JDK 17;
-- Android SDK 35 installed;
+- Android SDK 36 installed;
 - a physical Android 8.0+ device is strongly recommended for testing.
 
 Open the `android/` directory as the project in Android Studio, let Gradle sync, then build/install the `app` module.
