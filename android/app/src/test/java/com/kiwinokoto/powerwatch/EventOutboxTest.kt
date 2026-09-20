@@ -51,4 +51,20 @@ class EventOutboxTest {
             prefs.getString("events", null)
         )
     }
+    @Test
+    fun retentionDropsOldestNonCriticalEventsButKeepsPowerTransitions() {
+        EventOutbox.enqueue(context, "critical-loss", "{\"event\":\"power_lost\"}")
+        for (index in 0..100) {
+            EventOutbox.enqueue(context, "test-$index", "{\"event\":\"test\"}")
+        }
+        EventOutbox.enqueue(context, "critical-restored", "{\"event\":\"power_restored\"}")
+
+        val pending = EventOutbox.pending(context)
+        assertEquals(102, pending.size)
+        assertEquals(true, pending.any { it.eventId == "critical-loss" })
+        assertEquals(true, pending.any { it.eventId == "critical-restored" })
+        assertEquals(false, pending.any { it.eventId == "test-0" })
+        assertEquals(true, pending.any { it.eventId == "test-100" })
+    }
+
 }

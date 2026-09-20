@@ -10,6 +10,7 @@ object EventOutbox {
     private const val FILE = "powerwatch-outbox"
     private const val KEY_EVENTS = "events"
     private const val KEY_EVENTS_BACKUP = "events_backup"
+    private const val MAX_NON_CRITICAL_EVENTS = 100
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -19,7 +20,7 @@ object EventOutbox {
         val events = read(context).toMutableList()
         if (events.any { it.eventId == eventId }) return
         events += PendingEvent(eventId, payload)
-        write(context, events)
+        write(context, trimNonCritical(events))
     }
 
     @Synchronized
@@ -42,6 +43,23 @@ object EventOutbox {
         }
         return recovered
     }
+
+    private fun trimNonCritical(events: List<PendingEvent>): List<PendingEvent> {
+        var excess = events.count { !isCritical(it) } - MAX_NON_CRITICAL_EVENTS
+        if (excess <= 0) return events
+        return events.filter { event ->
+            if (excess > 0 && !isCritical(event)) {
+                excess--
+                false
+            } else {
+                true
+            }
+        }
+    }
+
+    private fun isCritical(event: PendingEvent): Boolean = runCatching {
+        JSONObject(event.payload).optString("event") in setOf("power_lost", "power_restored")
+    }.getOrDefault(false)
 
     private fun parse(raw: String): List<PendingEvent>? = runCatching {
         val array = JSONArray(raw)
