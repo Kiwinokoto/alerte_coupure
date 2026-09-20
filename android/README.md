@@ -129,6 +129,7 @@ Power-loss/restoration and manual events retry delivery a few times so a Wi-Fi-t
 - decide the small set of officially supported phone models;
 - assign a dedicated production hostname;
 - add Device Owner only if normal-Android reliability testing shows a real need;
+- add a network-resilience layer before considering privileged radio control: detect loss of **validated Internet** (not just link state), distinguish Wi-Fi-without-Internet from total loss, explicitly request/use an already-enabled cellular network when appropriate, then fall back to direct SMS if Internet still cannot be reached. Keep automatic Wi-Fi/mobile-data toggling out of the normal app; evaluate Device Owner/root/carrier-level control only if physical reliability tests prove Android's normal Wi-Fi → cellular failover insufficient;
 - keep Android debugging privileges outside the app. For development ergonomics, consider a reusable workstation-side ADB helper that detects an authorized USB device, switches ADB to TCP on the phone hotspot, reconnects over TCP, installs/builds/logs as needed, and closes TCP debugging again at the end. This should be generic for future Android projects rather than a PowerWatch production feature.
 
 ## Post-V1 / productisation
