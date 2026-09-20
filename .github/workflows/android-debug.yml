@@ -52,6 +52,9 @@ jobs:
       - name: Build debug APK
         run: ./gradlew --no-daemon :app:assembleDebug
 
+      - name: Verify release build
+        run: ./gradlew --no-daemon :app:assembleRelease
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
