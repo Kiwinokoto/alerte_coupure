@@ -2,6 +2,7 @@ package com.kiwinokoto.powerwatch
 
 import android.content.Context
 import android.os.Build
+import android.os.PowerManager
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -10,7 +11,25 @@ import java.util.UUID
 import java.util.concurrent.Executors
 
 object WebhookClient {
+    private const val CRITICAL_DELIVERY_WAKE_LOCK_MS = 90_000L
     private val executor = Executors.newSingleThreadExecutor()
+
+    internal fun isCriticalPowerEvent(eventType: String): Boolean =
+        eventType == "power_lost" || eventType == "power_restored"
+
+    internal fun retryDelaysFor(eventType: String): LongArray =
+        if (isCriticalPowerEvent(eventType)) longArrayOf(0L, 5_000L, 15_000L) else longArrayOf(0L)
+
+    private fun acquireCriticalDeliveryWakeLock(context: Context): PowerManager.WakeLock {
+        val powerManager = context.getSystemService(PowerManager::class.java)
+        return powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "PowerWatch:critical-delivery"
+        ).apply {
+            setReferenceCounted(false)
+            acquire(CRITICAL_DELIVERY_WAKE_LOCK_MS)
+        }
+    }
 
     fun sendAsync(
         context: Context,
@@ -23,46 +42,60 @@ object WebhookClient {
         val eventTimestamp = Instant.now().toString()
         val payload = buildPayload(appContext, eventType, snapshot, reason, eventId, eventTimestamp)
         val persistent = eventType != "heartbeat"
+        val criticalFallback = isCriticalPowerEvent(eventType)
         if (persistent) EventOutbox.enqueue(appContext, eventId, payload)
 
         val url = MonitorPrefs.webhookUrl(appContext)
         if (url.isBlank()) {
+            if (criticalFallback) FallbackTracker.markEligible(appContext, eventId, eventType)
             MonitorPrefs.setLastDelivery(appContext, "Webhook non configuré · événement conservé localement")
             return
         }
 
+        val deliveryWakeLock = if (criticalFallback) {
+            acquireCriticalDeliveryWakeLock(appContext)
+        } else {
+            null
+        }
+
         executor.execute {
-            replayOutbox(appContext, url, eventId)
+            try {
+                replayOutbox(appContext, url, eventId)
 
-            val retries = if (eventType == "heartbeat") {
-                longArrayOf(0L)
-            } else {
-                longArrayOf(0L, 5_000L, 15_000L)
-            }
+                val retries = retryDelaysFor(eventType)
+                var lastError = "échec inconnu"
 
-            var lastError = "échec inconnu"
-            for (delay in retries) {
-                if (delay > 0) Thread.sleep(delay)
-                try {
-                    val code = post(appContext, url, payload)
-                    if (code in 200..299) {
-                        if (persistent) EventOutbox.remove(appContext, eventId)
-                        MonitorPrefs.setLastDelivery(
-                            appContext,
-                            "${Instant.now()} · $eventType · HTTP $code"
-                        )
-                        return@execute
+                for ((attempt, delay) in retries.withIndex()) {
+                    if (delay > 0) Thread.sleep(delay)
+                    try {
+                        val code = post(appContext, url, payload)
+                        if (code in 200..299) {
+                            if (persistent) EventOutbox.remove(appContext, eventId)
+                            FallbackTracker.clear(appContext, eventId)
+                            MonitorPrefs.setLastDelivery(
+                                appContext,
+                                "${Instant.now()} · $eventType · HTTP $code"
+                            )
+                            return@execute
+                        }
+                        lastError = "HTTP $code"
+                    } catch (error: Exception) {
+                        lastError = error.javaClass.simpleName + ": " + (error.message ?: "")
                     }
-                    lastError = "HTTP $code"
-                } catch (error: Exception) {
-                    lastError = error.javaClass.simpleName + ": " + (error.message ?: "")
+                }
+
+                if (criticalFallback) {
+                    FallbackTracker.markEligible(appContext, eventId, eventType)
+                }
+                MonitorPrefs.setLastDelivery(
+                    appContext,
+                    "${Instant.now()} · $eventType · ÉCHEC · $lastError"
+                )
+            } finally {
+                deliveryWakeLock?.let { wakeLock ->
+                    if (wakeLock.isHeld) wakeLock.release()
                 }
             }
-
-            MonitorPrefs.setLastDelivery(
-                appContext,
-                "${Instant.now()} · $eventType · ÉCHEC · $lastError"
-            )
         }
     }
 
@@ -162,6 +195,7 @@ object WebhookClient {
             try {
                 if (post(context, endpoint, event.payload) in 200..299) {
                     EventOutbox.remove(context, event.eventId)
+                    FallbackTracker.clear(context, event.eventId)
                 } else {
                     return
                 }

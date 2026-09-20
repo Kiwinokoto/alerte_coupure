@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -39,6 +40,7 @@ class MainActivity : Activity() {
     private lateinit var networkText: TextView
     private lateinit var backendText: TextView
     private lateinit var backendContactText: TextView
+    private lateinit var fallbackText: TextView
     private lateinit var communicationText: TextView
     private lateinit var deliveryText: TextView
     private lateinit var eventsText: TextView
@@ -111,11 +113,13 @@ class MainActivity : Activity() {
         networkText = statusLine()
         backendText = statusLine()
         backendContactText = statusLine()
+        fallbackText = statusLine()
         communicationText = statusLine()
         deliveryText = statusLine()
         root.addView(networkText)
         root.addView(backendText)
         root.addView(backendContactText)
+        root.addView(fallbackText)
         root.addView(communicationText)
         root.addView(deliveryText)
 
@@ -167,9 +171,9 @@ class MainActivity : Activity() {
         }, matchWidth())
 
         root.addView(Button(this).apply {
-            text = "Ouvrir les réglages d’optimisation batterie"
+            text = "Autoriser PowerWatch sans optimisation batterie"
             setOnClickListener {
-                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                requestBatteryOptimizationExemption()
             }
         }, matchWidth())
 
@@ -355,6 +359,14 @@ class MainActivity : Activity() {
             }
         )
 
+        val fallbackCount = FallbackTracker.eligibleCount(this)
+        fallbackText.text = if (fallbackCount == 0) {
+            "Fallback direct : aucun événement critique en attente"
+        } else {
+            "Fallback direct : $fallbackCount événement(s) critique(s) en attente · SMS non activé"
+        }
+        applyStatusTone(fallbackText, if (fallbackCount == 0) StatusTone.NEUTRAL else StatusTone.WARNING)
+
         communicationText.text = MonitorPrefs.remoteAlertSummary(this)
         applyStatusTone(communicationText, StatusTone.NEUTRAL)
         deliveryText.text = "Dernier envoi : " + MonitorPrefs.lastDelivery(this)
@@ -457,6 +469,27 @@ class MainActivity : Activity() {
             Intent(this, MonitorService::class.java)
                 .setAction(MonitorService.ACTION_STOP)
         )
+    }
+
+    private fun requestBatteryOptimizationExemption() {
+        val powerManager = getSystemService(PowerManager::class.java)
+        if (powerManager.isIgnoringBatteryOptimizations(packageName)) {
+            toast("PowerWatch est déjà exempté des optimisations batterie.")
+            return
+        }
+
+        val requested = runCatching {
+            startActivity(
+                Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:$packageName")
+                )
+            )
+        }.isSuccess
+
+        if (!requested) {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
     }
 
     private fun openDeveloperSettings() {
