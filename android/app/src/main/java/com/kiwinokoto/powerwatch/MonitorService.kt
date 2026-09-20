@@ -10,7 +10,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
-import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -244,25 +243,12 @@ class MonitorService : Service() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val stopIntent = PendingIntent.getService(
-            this,
-            1,
-            Intent(this, MonitorService::class.java).setAction(ACTION_STOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
         val powerText = when (snapshot.externalPower) {
             true -> "Secteur présent"
             false -> "Sur batterie — secteur absent"
             null -> "État secteur inconnu"
         }
         val batteryText = snapshot.batteryPercent?.let { " · batterie $it %" } ?: ""
-
-        val stopAction = Notification.Action.Builder(
-            Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
-            "Désactiver",
-            stopIntent
-        ).build()
 
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
@@ -272,7 +258,6 @@ class MonitorService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)
-            .addAction(stopAction)
             .build()
     }
 
