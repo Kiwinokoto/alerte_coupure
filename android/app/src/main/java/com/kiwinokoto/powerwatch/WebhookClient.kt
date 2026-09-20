@@ -20,6 +20,22 @@ object WebhookClient {
     internal fun retryDelaysFor(eventType: String): LongArray =
         if (isCriticalPowerEvent(eventType)) longArrayOf(0L, 5_000L, 15_000L) else longArrayOf(0L)
 
+    internal fun criticalEventTypeFromPayload(payload: String): String? =
+        runCatching { JSONObject(payload).optString("event") }
+            .getOrNull()
+            ?.takeIf(::isCriticalPowerEvent)
+
+    internal fun replayOrder(
+        pending: List<PendingEvent>,
+        currentEventId: String
+    ): List<PendingEvent> {
+        val candidates = pending.filterNot { it.eventId == currentEventId }
+        val (critical, regular) = candidates.partition {
+            criticalEventTypeFromPayload(it.payload) != null
+        }
+        return critical + regular
+    }
+
     private fun acquireCriticalDeliveryWakeLock(context: Context): PowerManager.WakeLock {
         val powerManager = context.getSystemService(PowerManager::class.java)
         return powerManager.newWakeLock(
@@ -190,16 +206,22 @@ object WebhookClient {
     }.toString()
 
     private fun replayOutbox(context: Context, endpoint: String, currentEventId: String) {
-        for (event in EventOutbox.pending(context)) {
-            if (event.eventId == currentEventId) continue
+        for (event in replayOrder(EventOutbox.pending(context), currentEventId)) {
+            val criticalEventType = criticalEventTypeFromPayload(event.payload)
             try {
                 if (post(context, endpoint, event.payload) in 200..299) {
                     EventOutbox.remove(context, event.eventId)
                     FallbackTracker.clear(context, event.eventId)
                 } else {
+                    criticalEventType?.let {
+                        FallbackTracker.markEligible(context, event.eventId, it)
+                    }
                     return
                 }
             } catch (_: Exception) {
+                criticalEventType?.let {
+                    FallbackTracker.markEligible(context, event.eventId, it)
+                }
                 return
             }
         }
