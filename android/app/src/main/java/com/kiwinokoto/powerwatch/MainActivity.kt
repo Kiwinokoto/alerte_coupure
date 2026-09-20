@@ -19,6 +19,7 @@ import android.provider.Settings
 import android.text.InputType
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -47,6 +48,8 @@ class MainActivity : Activity() {
     private lateinit var deviceNameInput: EditText
     private lateinit var webhookInput: EditText
     private lateinit var webhookTokenInput: EditText
+    private lateinit var fallbackSmsInput: EditText
+    private lateinit var fallbackSmsEnabledInput: CheckBox
     private lateinit var toggleButton: Button
 
     private val refreshUi = object : Runnable {
@@ -159,6 +162,24 @@ class MainActivity : Activity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
         root.addView(webhookTokenInput, matchWidth())
+
+        fallbackSmsInput = EditText(this).apply {
+            hint = "Numéro de secours SMS (stocké localement)"
+            setText(MonitorPrefs.fallbackSmsNumber(this@MainActivity))
+            inputType = InputType.TYPE_CLASS_PHONE
+        }
+        root.addView(fallbackSmsInput, matchWidth())
+
+        fallbackSmsEnabledInput = CheckBox(this).apply {
+            text = "Autoriser le fallback SMS direct"
+            isChecked = MonitorPrefs.fallbackSmsEnabled(this@MainActivity)
+        }
+        root.addView(fallbackSmsEnabledInput, matchWidth())
+
+        root.addView(TextView(this).apply {
+            text = "Le fallback SMS est désactivé par défaut. Une fois activé, des SMS réels peuvent être envoyés si le backend ne reçoit pas une coupure ou un rétablissement."
+            setPadding(0, 0, 0, dp(8))
+        })
 
         root.addView(Button(this).apply {
             text = "Enregistrer la configuration"
@@ -360,12 +381,32 @@ class MainActivity : Activity() {
         )
 
         val fallbackCount = FallbackTracker.eligibleCount(this)
-        fallbackText.text = if (fallbackCount == 0) {
-            "Fallback direct : aucun événement critique en attente"
-        } else {
-            "Fallback direct : $fallbackCount événement(s) critique(s) en attente · SMS non activé"
+        val smsEnabled = MonitorPrefs.fallbackSmsEnabled(this)
+        val smsConfigured = MonitorPrefs.fallbackSmsNumber(this).isNotBlank()
+        val smsPermission =
+            checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+        val smsReady = smsEnabled && smsConfigured && smsPermission
+
+        fallbackText.text = when {
+            fallbackCount > 0 && smsReady ->
+                "Fallback direct : $fallbackCount événement(s) critique(s) en attente · SMS actif"
+            fallbackCount > 0 ->
+                "Fallback direct : $fallbackCount événement(s) critique(s) en attente · SMS non actif"
+            smsReady ->
+                "Fallback direct : SMS actif · aucun événement critique en attente"
+            smsConfigured ->
+                "Fallback direct : SMS configuré mais désactivé"
+            else ->
+                "Fallback direct : SMS non configuré"
         }
-        applyStatusTone(fallbackText, if (fallbackCount == 0) StatusTone.NEUTRAL else StatusTone.WARNING)
+        applyStatusTone(
+            fallbackText,
+            if (fallbackCount > 0 || (smsEnabled && !smsReady)) {
+                StatusTone.WARNING
+            } else {
+                StatusTone.NEUTRAL
+            }
+        )
 
         communicationText.text = MonitorPrefs.remoteAlertSummary(this)
         applyStatusTone(communicationText, StatusTone.NEUTRAL)
@@ -426,6 +467,16 @@ class MainActivity : Activity() {
         val name = deviceNameInput.text.toString().trim().ifBlank { "Restaurant" }
         val webhook = webhookInput.text.toString().trim()
         val token = webhookTokenInput.text.toString().trim()
+        val fallbackSmsRaw = fallbackSmsInput.text.toString().trim()
+        val fallbackSms = if (fallbackSmsRaw.isBlank()) {
+            ""
+        } else {
+            SmsFallback.normalizeRecipient(fallbackSmsRaw)
+                ?: run {
+                    toast("Numéro SMS invalide. Utilise un numéro français ou le format international +...")
+                    return false
+                }
+        }
 
         if (webhook.isNotBlank() && !webhook.startsWith("https://")) {
             toast("La V1 n’accepte que les webhooks HTTPS.")
@@ -435,7 +486,45 @@ class MainActivity : Activity() {
         MonitorPrefs.setDeviceName(this, name)
         MonitorPrefs.setWebhookUrl(this, webhook)
         MonitorPrefs.setWebhookToken(this, token)
+        MonitorPrefs.setFallbackSmsNumber(this, fallbackSms)
+
+        if (fallbackSmsEnabledInput.isChecked) {
+            if (fallbackSms.isBlank()) {
+                toast("Configure un numéro avant d’activer le fallback SMS.")
+                MonitorPrefs.setFallbackSmsEnabled(this, false)
+                return false
+            }
+            if (
+                checkSelfPermission(Manifest.permission.SEND_SMS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                MonitorPrefs.setFallbackSmsEnabled(this, false)
+                requestPermissions(arrayOf(Manifest.permission.SEND_SMS), 101)
+                toast("Autorise l’envoi de SMS, puis enregistre à nouveau la configuration.")
+                return false
+            }
+        }
+
+        MonitorPrefs.setFallbackSmsEnabled(this, fallbackSmsEnabledInput.isChecked)
         return true
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 101) return
+
+        val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            fallbackSmsEnabledInput.isChecked = false
+            MonitorPrefs.setFallbackSmsEnabled(this, false)
+            toast("Fallback SMS laissé désactivé : permission refusée.")
+        } else {
+            toast("Permission SMS accordée. Enregistre la configuration pour activer le fallback.")
+        }
     }
 
     private fun confirmDisarmAndQuit() {
