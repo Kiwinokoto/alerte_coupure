@@ -6,6 +6,8 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -31,6 +33,8 @@ class MainActivity : Activity() {
     private lateinit var powerText: TextView
     private lateinit var batteryText: TextView
     private lateinit var optimizationText: TextView
+    private lateinit var networkText: TextView
+    private lateinit var backendText: TextView
     private lateinit var communicationText: TextView
     private lateinit var deliveryText: TextView
     private lateinit var eventsText: TextView
@@ -100,8 +104,12 @@ class MainActivity : Activity() {
 
         root.addView(sectionTitle("Alertes", dp(18)))
 
+        networkText = statusLine()
+        backendText = statusLine()
         communicationText = statusLine()
         deliveryText = statusLine()
+        root.addView(networkText)
+        root.addView(backendText)
         root.addView(communicationText)
         root.addView(deliveryText)
 
@@ -279,8 +287,10 @@ class MainActivity : Activity() {
         } else {
             "Optimisation batterie : Android peut appliquer des restrictions"
         }
+        networkText.text = networkStatus()
+        backendText.text = backendStatus()
         communicationText.text = MonitorPrefs.remoteAlertSummary(this)
-        deliveryText.text = "Dernier contact serveur : " + MonitorPrefs.lastDelivery(this)
+        deliveryText.text = "Dernier envoi : " + MonitorPrefs.lastDelivery(this)
         eventsText.text = EventLog.recent(this)
         toggleButton.text = if (armed) {
             "Désarmer et quitter"
@@ -295,6 +305,41 @@ class MainActivity : Activity() {
             Instant.parse(value)
                 .atZone(ZoneId.systemDefault())
                 .format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
+        }.getOrNull()
+    }
+
+    private fun networkStatus(): String {
+        val manager = getSystemService(ConnectivityManager::class.java)
+        val network = manager.activeNetwork ?: return "Réseau : indisponible"
+        val capabilities = manager.getNetworkCapabilities(network)
+            ?: return "Réseau : état inconnu"
+        return when {
+            !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ->
+                "Réseau : connecté sans accès Internet"
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ->
+                "Réseau : Internet disponible"
+            else -> "Réseau : connecté · Internet non validé"
+        }
+    }
+
+    private fun backendStatus(): String {
+        if (MonitorPrefs.webhookUrl(this).isBlank()) return "Backend/VPS : non configuré"
+        val contact = formatBackendContact(MonitorPrefs.backendLastContact(this))
+        val suffix = contact?.let { " · dernier contact $it" } ?: ""
+        return when (MonitorPrefs.backendHealth(this)) {
+            BackendHealth.UNKNOWN -> "Backend/VPS : état inconnu"
+            BackendHealth.OK -> "Backend/VPS : joignable$suffix"
+            BackendHealth.ERROR -> "Backend/VPS : joignable mais en erreur$suffix"
+            BackendHealth.UNREACHABLE -> "Backend/VPS : INJOIGNABLE$suffix"
+        }
+    }
+
+    private fun formatBackendContact(value: String?): String? {
+        if (value.isNullOrBlank()) return null
+        return runCatching {
+            Instant.parse(value)
+                .atZone(ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofPattern("dd/MM HH:mm:ss"))
         }.getOrNull()
     }
 

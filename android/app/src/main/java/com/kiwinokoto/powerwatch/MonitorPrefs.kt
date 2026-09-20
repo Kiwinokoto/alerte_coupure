@@ -4,6 +4,13 @@ import android.content.Context
 import java.time.Instant
 import java.util.UUID
 
+enum class BackendHealth {
+    UNKNOWN,
+    OK,
+    ERROR,
+    UNREACHABLE
+}
+
 object MonitorPrefs {
     private const val FILE = "powerwatch"
     private const val KEY_ARMED = "armed"
@@ -16,6 +23,8 @@ object MonitorPrefs {
     private const val KEY_LAST_EVENT = "last_event"
     private const val KEY_LAST_DELIVERY = "last_delivery"
     private const val KEY_REMOTE_ALERT_SUMMARY = "remote_alert_summary"
+    private const val KEY_BACKEND_HEALTH = "backend_health"
+    private const val KEY_BACKEND_LAST_CONTACT = "backend_last_contact"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -52,7 +61,15 @@ object MonitorPrefs {
             ?: BuildConfig.POWERWATCH_DEFAULT_WEBHOOK_URL
 
     fun setWebhookUrl(context: Context, value: String) {
-        prefs(context).edit().putString(KEY_WEBHOOK_URL, value.trim()).apply()
+        val normalized = value.trim()
+        val p = prefs(context)
+        val previous = p.getString(KEY_WEBHOOK_URL, null)
+        val editor = p.edit().putString(KEY_WEBHOOK_URL, normalized)
+        if (previous != normalized) {
+            editor.putString(KEY_BACKEND_HEALTH, BackendHealth.UNKNOWN.name)
+            editor.remove(KEY_BACKEND_LAST_CONTACT)
+        }
+        editor.apply()
     }
 
     fun webhookToken(context: Context): String =
@@ -102,5 +119,30 @@ object MonitorPrefs {
 
     fun setRemoteAlertSummary(context: Context, value: String) {
         prefs(context).edit().putString(KEY_REMOTE_ALERT_SUMMARY, value).apply()
+    }
+
+    fun backendHealth(context: Context): BackendHealth =
+        runCatching {
+            BackendHealth.valueOf(
+                prefs(context).getString(KEY_BACKEND_HEALTH, BackendHealth.UNKNOWN.name)
+                    ?: BackendHealth.UNKNOWN.name
+            )
+        }.getOrDefault(BackendHealth.UNKNOWN)
+
+    fun backendLastContact(context: Context): String? =
+        prefs(context).getString(KEY_BACKEND_LAST_CONTACT, null)
+
+    fun recordBackendHttpResult(context: Context, statusCode: Int) {
+        val health = if (statusCode in 200..299) BackendHealth.OK else BackendHealth.ERROR
+        prefs(context).edit()
+            .putString(KEY_BACKEND_HEALTH, health.name)
+            .putString(KEY_BACKEND_LAST_CONTACT, Instant.now().toString())
+            .apply()
+    }
+
+    fun markBackendUnreachable(context: Context) {
+        prefs(context).edit()
+            .putString(KEY_BACKEND_HEALTH, BackendHealth.UNREACHABLE.name)
+            .apply()
     }
 }

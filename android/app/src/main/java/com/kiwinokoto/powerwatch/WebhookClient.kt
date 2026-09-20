@@ -98,6 +98,7 @@ object WebhookClient {
 
                 try {
                     val code = connection.responseCode
+                    MonitorPrefs.recordBackendHttpResult(appContext, code)
                     if (code !in 200..299) {
                         MonitorPrefs.setRemoteAlertSummary(
                             appContext,
@@ -119,6 +120,7 @@ object WebhookClient {
                     connection.disconnect()
                 }
             } catch (error: Exception) {
+                MonitorPrefs.markBackendUnreachable(appContext)
                 MonitorPrefs.setRemoteAlertSummary(
                     appContext,
                     "Canal d’alerte : serveur temporairement injoignable"
@@ -187,7 +189,12 @@ object WebhookClient {
             connection.outputStream.use { output ->
                 output.write(payload.toByteArray(Charsets.UTF_8))
             }
-            return connection.responseCode
+            val code = connection.responseCode
+            MonitorPrefs.recordBackendHttpResult(context, code)
+            return code
+        } catch (error: Exception) {
+            MonitorPrefs.markBackendUnreachable(context)
+            throw error
         } finally {
             connection.disconnect()
         }
