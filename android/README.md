@@ -152,6 +152,26 @@ The current V1 is an Angela-first proof of concept. If reliability testing valid
 - production signing, release distribution and update strategy;
 - deciding whether this remains **PowerWatch V2** or becomes a separate product built from the validated PowerWatch core.
 
+### Post-V1 probe platforms
+
+Finish and validate the Android restaurant probe first. After that, keep the backend/protocol reusable so PowerWatch can support other battery-backed machines without duplicating the hard reliability work.
+
+Candidate probe targets:
+- **Windows laptop/tablet:** strong candidate. Windows exposes AC/battery state and power-change notifications, so a small background service/tray app can detect loss/restoration and reuse the same event/outbox/backend model. Packaging, auto-start, sleep/resume and signed updates still need platform-specific work.
+- **Linux laptop:** strong candidate. UPower/D-Bus exposes battery and line-power state on mainstream desktop distributions; a systemd user/system service can provide the long-running probe. Distribution differences, suspend/resume and packaging need testing.
+- **macOS laptop:** viable candidate. IOKit exposes power-source information and change notifications, and launchd can host the long-running agent. It is not expected to be fundamentally harder than Windows/Linux, but signing/notarization, permissions and sleep behavior need a dedicated validation pass.
+- **iPhone/iPad:** do **not** assume parity with Android. iOS normally suspends background apps outside specific system-approved modes, and the public SMS API presents a user-approved compose UI rather than allowing unattended direct SMS. Treat iOS first as a possible dashboard/companion client; only call it a reliable autonomous probe if a future prototype proves an App-Store-safe background design.
+- **Other systems:** add only from real demand. ChromeOS may be reachable through Android/Linux components but needs its own reliability evaluation. Raspberry Pi/desktop PCs without an internal battery are not equivalent probes unless paired with a UPS/battery HAT; UPS/network-device integrations may later become a separate probe class.
+
+Cross-platform rules:
+- mains detection, durable local event history/outbox, replay/idempotence, heartbeats, installation identity and backend APIs should share the same semantics across platforms;
+- platform-specific code should stay behind a small power-source/service adapter rather than forking the whole product;
+- **battery-backed does not imply alert-path-backed**: when mains fails, the local router may fail too. A Windows/Linux/macOS laptop can still detect the outage but may be unable to report it until IP returns unless it also has WWAN/tethering, a USB cellular modem, UPS-backed networking or another independent alert path;
+- Android's direct-SMS fallback is therefore a platform capability, not a universal assumption;
+- future fleet/customer dashboards should expose platform/capabilities rather than pretending every probe has identical fallback channels.
+
+The original proof of concept was Windows, so Windows is the natural first desktop port after Android V1; Linux can follow closely. macOS is a realistic desktop target. iOS should remain explicitly experimental until its background-execution limitations are proven compatible with unattended monitoring.
+
 The exact V2/V3 sequencing is deliberately open. The customer-facing status view is likely useful early in productisation; the multi-customer administrator console can come later once accounts, sites and per-installation identities exist. Neither should delay the restaurant-focused V1 reliability work.
 
 ## Overnight handoff (2026-09-19 → 2026-09-20)

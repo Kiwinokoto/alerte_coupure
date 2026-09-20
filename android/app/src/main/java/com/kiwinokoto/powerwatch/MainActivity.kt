@@ -7,8 +7,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -456,17 +454,19 @@ class MainActivity : Activity() {
     }
 
     private fun networkStatus(): Pair<String, StatusTone> {
-        val manager = getSystemService(ConnectivityManager::class.java)
-        val network = manager.activeNetwork
-            ?: return "Réseau : indisponible" to StatusTone.WARNING
-        val capabilities = manager.getNetworkCapabilities(network)
-            ?: return "Réseau : état inconnu" to StatusTone.NEUTRAL
-        return when {
-            !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ->
-                "Réseau : connecté sans accès Internet" to StatusTone.WARNING
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ->
-                "Réseau : Internet disponible" to StatusTone.OK
-            else -> "Réseau : connecté · Internet non validé" to StatusTone.WARNING
+        val snapshot = NetworkSnapshot.read(this)
+        val transport = snapshot.transportLabel()?.let { " · $it" }.orEmpty()
+        return when (snapshot.reachability) {
+            InternetReachability.UNAVAILABLE ->
+                "Réseau : indisponible" to StatusTone.WARNING
+            InternetReachability.UNKNOWN ->
+                "Réseau : état inconnu" to StatusTone.NEUTRAL
+            InternetReachability.CONNECTED_WITHOUT_INTERNET ->
+                "Réseau : connecté sans accès Internet$transport" to StatusTone.WARNING
+            InternetReachability.UNVALIDATED ->
+                "Réseau : connecté · Internet non validé$transport" to StatusTone.WARNING
+            InternetReachability.VALIDATED ->
+                "Réseau : Internet disponible$transport" to StatusTone.OK
         }
     }
 
