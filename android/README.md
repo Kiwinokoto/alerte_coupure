@@ -65,7 +65,7 @@ Requirements:
 
 Open the `android/` directory as the project in Android Studio, let Gradle sync, then build/install the `app` module.
 
-The repository does not yet contain a generated Gradle wrapper binary. Android Studio can sync the project using the configured Android Gradle Plugin; generating and committing the wrapper after the first workstation build remains a build-hardening task.
+The repository includes a Gradle 8.13 wrapper. Use `./gradlew` for reproducible command-line builds; Android builds still require JDK 17 and Android SDK 36.
 
 ## First test
 
@@ -127,7 +127,6 @@ Power-loss/restoration and manual events retry delivery a few times so a Wi-Fi-t
 - configure and test outbound alert delivery;
 - add a persistent on-device event outbox and design/test direct-SMS fallback for confirmed power loss when backend delivery fails;
 - design an explicit **Désarmer et quitter** action with a danger-style confirmation; swiping the UI away must continue to leave an armed foreground monitor running;
-- generate/commit the Gradle wrapper;
 - decide the small set of officially supported phone models;
 - assign a dedicated production hostname;
 - add Device Owner only if normal-Android reliability testing shows a real need.
@@ -150,11 +149,11 @@ The exact V2/V3 sequencing is deliberately open. The customer-facing status view
 
 ## Overnight handoff (2026-09-19 → 2026-09-20)
 
-- **Reference:** `dev/android-v1` code commit `2bdaf4c` (`Replay persisted Android events`) before this handoff update.
-- **Completed:** retry idempotence remains published, and the first persistent Android outbox/replay layer is now published. Non-heartbeat events are synchronously stored in a private SharedPreferences outbox before asynchronous delivery, retain their stable `event_id`/timestamp/payload across process restarts, are removed only after a 2xx response, and older queued events are replayed on later sends. Heartbeats remain ephemeral and also provide a regular replay trigger while monitoring is armed.
-- **Tests:** server suite still passes **8/8** using the existing `server-api` Docker image; `git diff --check` passes. Android compilation/unit tests remain unrun because the checked VPS has no Gradle/Android SDK and the repository still has no wrapper. The outbox therefore needs a real Android build plus offline/restart/reconnect testing before being treated as validated.
-- **VPS:** `/opt/powerwatch` was cleanly realigned to GitHub at `2bdaf4c`; production containers were not restarted/redeployed and remain on their existing image. No live DB migration has been applied.
-- **Next:** (1) build/install the outbox version on the OnePlus when an Android build host is available; (2) test backend unavailable → power event persisted → app/process restart → backend recovery → exactly-once server record; (3) add targeted Android persistence/replay tests once the Gradle wrapper/build path is available; (4) then continue degraded-backend UI/state work; (5) leave actual SMS delivery for an explicit later decision/test.
+- **Reference:** `dev/android-v1` code commit `82afc0e` (`Add Android Gradle wrapper`) before this handoff update.
+- **Completed:** retry idempotence and the first persistent Android outbox/replay layer remain published. A Gradle 8.13 wrapper is now committed, removing the missing-wrapper build-hardening blocker. Non-heartbeat events are synchronously stored in a private SharedPreferences outbox before asynchronous delivery, retain their stable `event_id`/timestamp/payload across process restarts, are removed only after a 2xx response, and older queued events are replayed on later sends. Heartbeats remain ephemeral and also provide a regular replay trigger while monitoring is armed.
+- **Tests:** server suite previously passed **8/8** using the existing `server-api` Docker image; `git diff --check` passes. Gradle wrapper generation was validated with `./gradlew --version` (Gradle 8.13). Full Android compilation/unit tests remain unrun because the workstation has JDK 11 and no Android SDK; the outbox still needs a JDK 17 + SDK 36 build plus offline/restart/reconnect testing before being treated as validated.
+- **VPS:** `/opt/powerwatch` is clean at handoff commit `b9df88e`; it intentionally has not been advanced to the wrapper-only commit because no runtime deployment is needed; production containers were not restarted/redeployed and remain on their existing image. No live DB migration has been applied.
+- **Next:** (1) use the committed wrapper with JDK 17 + Android SDK 36 to build/install the outbox version on the OnePlus; (2) test backend unavailable → power event persisted → app/process restart → backend recovery → exactly-once server record; (3) add targeted Android persistence/replay tests once the Gradle wrapper/build path is available; (4) then continue degraded-backend UI/state work; (5) leave actual SMS delivery for an explicit later decision/test.
 - **Risk/debt:** the V1 outbox intentionally uses a small private SharedPreferences JSON queue to avoid adding a database dependency. It currently has no retention cap and treats malformed stored JSON as an empty queue; harden corruption/size handling after the first device validation rather than expanding this patch untested.
 - **Migration/deploy note:** server idempotence still adds `events.event_id` plus a unique partial index through startup `init_db()`. This is additive/backward-compatible and still **not applied to the live DB**, because no unattended restart/deploy was performed.
 
