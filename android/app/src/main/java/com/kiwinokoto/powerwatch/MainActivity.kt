@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.graphics.Typeface
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -27,6 +28,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 class MainActivity : Activity() {
+    private enum class StatusTone { OK, WARNING, DANGER, NEUTRAL }
+
     private val handler = Handler(Looper.getMainLooper())
 
     private lateinit var armedText: TextView
@@ -35,6 +38,7 @@ class MainActivity : Activity() {
     private lateinit var optimizationText: TextView
     private lateinit var networkText: TextView
     private lateinit var backendText: TextView
+    private lateinit var backendContactText: TextView
     private lateinit var communicationText: TextView
     private lateinit var deliveryText: TextView
     private lateinit var eventsText: TextView
@@ -106,10 +110,12 @@ class MainActivity : Activity() {
 
         networkText = statusLine()
         backendText = statusLine()
+        backendContactText = statusLine()
         communicationText = statusLine()
         deliveryText = statusLine()
         root.addView(networkText)
         root.addView(backendText)
+        root.addView(backendContactText)
         root.addView(communicationText)
         root.addView(deliveryText)
 
@@ -241,9 +247,22 @@ class MainActivity : Activity() {
 
     private fun statusLine(): TextView =
         TextView(this).apply {
+            val horizontal = (10 * resources.displayMetrics.density).toInt()
+            val vertical = (6 * resources.displayMetrics.density).toInt()
             textSize = 16f
-            setPadding(0, 5, 0, 5)
+            setPadding(horizontal, vertical, horizontal, vertical)
         }
+
+    private fun applyStatusTone(view: TextView, tone: StatusTone) {
+        val background = when (tone) {
+            StatusTone.OK -> Color.rgb(226, 242, 226)
+            StatusTone.WARNING -> Color.rgb(255, 244, 204)
+            StatusTone.DANGER -> Color.rgb(255, 224, 224)
+            StatusTone.NEUTRAL -> Color.rgb(238, 238, 238)
+        }
+        view.setBackgroundColor(background)
+        view.setTextColor(Color.rgb(32, 32, 32))
+    }
 
     private fun sectionTitle(label: String, topPadding: Int): TextView =
         TextView(this).apply {
@@ -275,22 +294,71 @@ class MainActivity : Activity() {
         } else {
             "Surveillance arrêtée"
         }
+        applyStatusTone(armedText, if (armed) StatusTone.OK else StatusTone.NEUTRAL)
 
         powerText.text = "Secteur : " + when (snapshot.externalPower) {
             true -> "présent"
             false -> "ABSENT"
             null -> "inconnu"
         }
-        batteryText.text = "Batterie : " + (snapshot.batteryPercent?.let { "$it %" } ?: "inconnue")
+        applyStatusTone(
+            powerText,
+            when (snapshot.externalPower) {
+                true -> StatusTone.OK
+                false -> StatusTone.DANGER
+                null -> StatusTone.NEUTRAL
+            }
+        )
+
+        val battery = snapshot.batteryPercent
+        batteryText.text = "Batterie : " + (battery?.let { "$it %" } ?: "inconnue")
+        applyStatusTone(
+            batteryText,
+            when {
+                battery == null -> StatusTone.NEUTRAL
+                battery < 15 -> StatusTone.DANGER
+                battery < 30 -> StatusTone.WARNING
+                else -> StatusTone.OK
+            }
+        )
+
         optimizationText.text = if (unrestricted) {
             "Optimisation batterie : non restrictive"
         } else {
             "Optimisation batterie : Android peut appliquer des restrictions"
         }
-        networkText.text = networkStatus()
-        backendText.text = backendStatus()
+        applyStatusTone(optimizationText, if (unrestricted) StatusTone.OK else StatusTone.WARNING)
+
+        val network = networkStatus()
+        networkText.text = network.first
+        applyStatusTone(networkText, network.second)
+
+        val backendHealth = MonitorPrefs.backendHealth(this)
+        backendText.text = backendStatus(backendHealth)
+        applyStatusTone(
+            backendText,
+            when (backendHealth) {
+                BackendHealth.OK -> StatusTone.OK
+                BackendHealth.ERROR, BackendHealth.UNREACHABLE -> StatusTone.WARNING
+                BackendHealth.UNKNOWN -> StatusTone.NEUTRAL
+            }
+        )
+
+        val backendContact = formatBackendContact(MonitorPrefs.backendLastContact(this))
+        backendContactText.text = "Dernier contact backend : " + (backendContact ?: "jamais")
+        applyStatusTone(
+            backendContactText,
+            if (backendContact != null && backendHealth == BackendHealth.OK) {
+                StatusTone.OK
+            } else {
+                StatusTone.NEUTRAL
+            }
+        )
+
         communicationText.text = MonitorPrefs.remoteAlertSummary(this)
+        applyStatusTone(communicationText, StatusTone.NEUTRAL)
         deliveryText.text = "Dernier envoi : " + MonitorPrefs.lastDelivery(this)
+        applyStatusTone(deliveryText, StatusTone.NEUTRAL)
         eventsText.text = EventLog.recent(this)
         toggleButton.text = if (armed) {
             "Désarmer et quitter"
@@ -308,29 +376,28 @@ class MainActivity : Activity() {
         }.getOrNull()
     }
 
-    private fun networkStatus(): String {
+    private fun networkStatus(): Pair<String, StatusTone> {
         val manager = getSystemService(ConnectivityManager::class.java)
-        val network = manager.activeNetwork ?: return "Réseau : indisponible"
+        val network = manager.activeNetwork
+            ?: return "Réseau : indisponible" to StatusTone.WARNING
         val capabilities = manager.getNetworkCapabilities(network)
-            ?: return "Réseau : état inconnu"
+            ?: return "Réseau : état inconnu" to StatusTone.NEUTRAL
         return when {
             !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ->
-                "Réseau : connecté sans accès Internet"
+                "Réseau : connecté sans accès Internet" to StatusTone.WARNING
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ->
-                "Réseau : Internet disponible"
-            else -> "Réseau : connecté · Internet non validé"
+                "Réseau : Internet disponible" to StatusTone.OK
+            else -> "Réseau : connecté · Internet non validé" to StatusTone.WARNING
         }
     }
 
-    private fun backendStatus(): String {
+    private fun backendStatus(health: BackendHealth): String {
         if (MonitorPrefs.webhookUrl(this).isBlank()) return "Backend/VPS : non configuré"
-        val contact = formatBackendContact(MonitorPrefs.backendLastContact(this))
-        val suffix = contact?.let { " · dernier contact $it" } ?: ""
-        return when (MonitorPrefs.backendHealth(this)) {
+        return when (health) {
             BackendHealth.UNKNOWN -> "Backend/VPS : état inconnu"
-            BackendHealth.OK -> "Backend/VPS : joignable$suffix"
-            BackendHealth.ERROR -> "Backend/VPS : joignable mais en erreur$suffix"
-            BackendHealth.UNREACHABLE -> "Backend/VPS : INJOIGNABLE$suffix"
+            BackendHealth.OK -> "Backend/VPS : joignable"
+            BackendHealth.ERROR -> "Backend/VPS : joignable mais en erreur"
+            BackendHealth.UNREACHABLE -> "Backend/VPS : INJOIGNABLE"
         }
     }
 
