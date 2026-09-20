@@ -67,6 +67,12 @@ Open the `android/` directory as the project in Android Studio, let Gradle sync,
 
 The repository includes a Gradle 8.13 wrapper. Use `./gradlew` for reproducible command-line builds; Android builds still require JDK 17 and Android SDK 36.
 
+### Release signing
+
+`assembleRelease` intentionally remains usable without production credentials and then produces an unsigned APK for build validation only. A distributable production APK must be signed with a long-lived key kept outside Git. PowerWatch accepts signing material only through these four environment variables: `POWERWATCH_RELEASE_STORE_FILE`, `POWERWATCH_RELEASE_STORE_PASSWORD`, `POWERWATCH_RELEASE_KEY_ALIAS`, and `POWERWATCH_RELEASE_KEY_PASSWORD`. All four must be present together; a partial configuration fails the Gradle configuration phase.
+
+Do not place a production keystore or its passwords in the repository, `gradle.properties`, CI logs, or documentation. `*.jks` and `*.keystore` are ignored defensively, but the production key should still live in protected external storage with a separate backup. Creating that key and choosing its custody/backup policy is deliberately a human release decision.
+
 ## First test
 
 1. Install the app on a spare Android phone with a battery.
@@ -182,3 +188,5 @@ Before calling this production-ready, test at least:
 - during finalisation, measure real battery/wakeup impact with the current 30-second local consistency check and 2-minute backend heartbeat, then compare longer heartbeat intervals (for example 5 or 10 minutes) before changing defaults. Optimise from measurements, not assumptions.
 
 The goal is measured reliability, not merely "it worked once on one phone."
+
+- **2026-09-21 release-hardening pass:** documented unsigned-vs-distributable release behavior and external signing-key custody; `android/.gitignore` now excludes `*.jks` and `*.keystore`, verified with `git check-ignore`. No key was created or exposed. A fresh Gradle invocation was blocked before project configuration by a pre-existing root-owned `~/.gradle/caches/8.13/file-changes/last-build.bin`; no sudo/cache mutation was attempted. Previous full Android tests/lint/release build remain the latest successful build validation.
