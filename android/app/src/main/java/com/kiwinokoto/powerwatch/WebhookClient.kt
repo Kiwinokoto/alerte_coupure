@@ -27,8 +27,13 @@ object WebhookClient {
 
         val eventId = UUID.randomUUID().toString()
         val eventTimestamp = Instant.now().toString()
+        val payload = buildPayload(appContext, eventType, snapshot, reason, eventId, eventTimestamp)
+        val persistent = eventType != "heartbeat"
+        if (persistent) EventOutbox.enqueue(appContext, eventId, payload)
 
         executor.execute {
+            replayOutbox(appContext, url, eventId)
+
             val retries = if (eventType == "heartbeat") {
                 longArrayOf(0L)
             } else {
@@ -39,8 +44,9 @@ object WebhookClient {
             for (delay in retries) {
                 if (delay > 0) Thread.sleep(delay)
                 try {
-                    val code = post(appContext, url, eventType, snapshot, reason, eventId, eventTimestamp)
+                    val code = post(appContext, url, payload)
                     if (code in 200..299) {
+                        if (persistent) EventOutbox.remove(appContext, eventId)
                         MonitorPrefs.setLastDelivery(
                             appContext,
                             "${Instant.now()} · $eventType · HTTP $code"
@@ -128,28 +134,42 @@ object WebhookClient {
         return eventsEndpoint.removeSuffix(suffix) + "/api/v1/status"
     }
 
-    private fun post(
+    private fun buildPayload(
         context: Context,
-        endpoint: String,
         eventType: String,
         snapshot: PowerSnapshot,
         reason: String,
         eventId: String,
         eventTimestamp: String
-    ): Int {
-        val payload = JSONObject().apply {
-            put("schema_version", 1)
-            put("event", eventType)
-            put("event_id", eventId)
-            put("timestamp_utc", eventTimestamp)
-            put("device_name", MonitorPrefs.deviceName(context))
-            put("installation_id", MonitorPrefs.installationId(context))
-            put("external_power", snapshot.externalPower ?: JSONObject.NULL)
-            put("battery_percent", snapshot.batteryPercent ?: JSONObject.NULL)
-            put("reason", reason)
-            put("android_sdk", Build.VERSION.SDK_INT)
-        }.toString()
+    ): String = JSONObject().apply {
+        put("schema_version", 1)
+        put("event", eventType)
+        put("event_id", eventId)
+        put("timestamp_utc", eventTimestamp)
+        put("device_name", MonitorPrefs.deviceName(context))
+        put("installation_id", MonitorPrefs.installationId(context))
+        put("external_power", snapshot.externalPower ?: JSONObject.NULL)
+        put("battery_percent", snapshot.batteryPercent ?: JSONObject.NULL)
+        put("reason", reason)
+        put("android_sdk", Build.VERSION.SDK_INT)
+    }.toString()
 
+    private fun replayOutbox(context: Context, endpoint: String, currentEventId: String) {
+        for (event in EventOutbox.pending(context)) {
+            if (event.eventId == currentEventId) continue
+            try {
+                if (post(context, endpoint, event.payload) in 200..299) {
+                    EventOutbox.remove(context, event.eventId)
+                } else {
+                    return
+                }
+            } catch (_: Exception) {
+                return
+            }
+        }
+    }
+
+    private fun post(context: Context, endpoint: String, payload: String): Int {
         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 10_000
