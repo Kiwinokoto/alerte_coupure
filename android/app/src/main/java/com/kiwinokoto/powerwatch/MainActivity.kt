@@ -18,6 +18,8 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.text.InputType
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -51,10 +53,26 @@ class MainActivity : Activity() {
     private lateinit var fallbackSmsInput: EditText
     private lateinit var fallbackSmsEnabledInput: CheckBox
     private lateinit var toggleButton: Button
+    private lateinit var scrollView: ScrollView
 
     private val refreshUi = object : Runnable {
         override fun run() {
+            val preserveScroll = configurationInputHasFocus()
+            val previousScrollY = if (preserveScroll && ::scrollView.isInitialized) {
+                scrollView.scrollY
+            } else {
+                null
+            }
+
             renderState()
+
+            previousScrollY?.let { scrollY ->
+                scrollView.post {
+                    if (configurationInputHasFocus()) {
+                        scrollView.scrollTo(0, scrollY)
+                    }
+                }
+            }
             handler.postDelayed(this, 1_000L)
         }
     }
@@ -167,6 +185,16 @@ class MainActivity : Activity() {
             hint = "Numéro de secours SMS (stocké localement)"
             setText(MonitorPrefs.fallbackSmsNumber(this@MainActivity))
             inputType = InputType.TYPE_CLASS_PHONE
+            maxLines = 1
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId != EditorInfo.IME_ACTION_DONE) {
+                    false
+                } else {
+                    saveSettingsFromUi()
+                    true
+                }
+            }
         }
         root.addView(fallbackSmsInput, matchWidth())
 
@@ -184,10 +212,7 @@ class MainActivity : Activity() {
         root.addView(Button(this).apply {
             text = "Enregistrer la configuration"
             setOnClickListener {
-                if (saveSettings()) {
-                    WebhookClient.refreshServerStatusAsync(this@MainActivity)
-                    toast("Configuration enregistrée.")
-                }
+                saveSettingsFromUi()
             }
         }, matchWidth())
 
@@ -259,7 +284,7 @@ class MainActivity : Activity() {
         }
         root.addView(eventsText, matchWidth())
 
-        setContentView(ScrollView(this).apply {
+        scrollView = ScrollView(this).apply {
             addView(
                 root,
                 ViewGroup.LayoutParams(
@@ -267,7 +292,8 @@ class MainActivity : Activity() {
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
             )
-        })
+        }
+        setContentView(scrollView)
     }
 
     private fun statusLine(): TextView =
@@ -461,6 +487,26 @@ class MainActivity : Activity() {
                 .atZone(ZoneId.systemDefault())
                 .format(DateTimeFormatter.ofPattern("dd/MM HH:mm:ss"))
         }.getOrNull()
+    }
+
+    private fun configurationInputHasFocus(): Boolean =
+        deviceNameInput.hasFocus() ||
+            webhookInput.hasFocus() ||
+            webhookTokenInput.hasFocus() ||
+            fallbackSmsInput.hasFocus()
+
+    private fun saveSettingsFromUi(): Boolean {
+        val saved = saveSettings()
+        if (!saved) return false
+
+        fallbackSmsInput.clearFocus()
+        currentFocus?.clearFocus()
+        getSystemService(InputMethodManager::class.java)
+            .hideSoftInputFromWindow(fallbackSmsInput.windowToken, 0)
+        WebhookClient.refreshServerStatusAsync(this)
+        renderState()
+        toast("Configuration enregistrée.")
+        return true
     }
 
     private fun saveSettings(): Boolean {
