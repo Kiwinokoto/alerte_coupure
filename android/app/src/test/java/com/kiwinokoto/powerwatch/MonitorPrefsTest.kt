@@ -51,6 +51,18 @@ class MonitorPrefsTest {
     }
 
     @Test
+    fun smsFallbackIsDisabledAndUnconfiguredByDefault() {
+        assertEquals("", MonitorPrefs.fallbackSmsNumber(context))
+        assertEquals(false, MonitorPrefs.fallbackSmsEnabled(context))
+
+        MonitorPrefs.setFallbackSmsNumber(context, "+33612345678")
+        MonitorPrefs.setFallbackSmsEnabled(context, true)
+
+        assertEquals("+33612345678", MonitorPrefs.fallbackSmsNumber(context))
+        assertEquals(true, MonitorPrefs.fallbackSmsEnabled(context))
+    }
+
+    @Test
     fun changingWebhookResetsBackendState() {
         MonitorPrefs.setWebhookUrl(context, "https://one.example/api/v1/events")
         MonitorPrefs.recordBackendHttpResult(context, 200)
