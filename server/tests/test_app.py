@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
@@ -153,6 +154,52 @@ class PowerWatchServerTests(unittest.TestCase):
 
         self.assertEqual(alert.call_args.args[0], "probe_online")
 
+
+    def test_init_db_migrates_legacy_events_table_without_losing_history(self):
+        powerwatch.DB_PATH.unlink()
+
+        with sqlite3.connect(powerwatch.DB_PATH) as db:
+            db.executescript(
+                """
+                CREATE TABLE events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    received_at TEXT NOT NULL,
+                    event_timestamp TEXT,
+                    installation_id TEXT NOT NULL,
+                    device_name TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    external_power INTEGER,
+                    battery_percent INTEGER,
+                    reason TEXT,
+                    payload_json TEXT NOT NULL
+                );
+                INSERT INTO events (
+                    received_at, event_timestamp, installation_id, device_name,
+                    event_type, external_power, battery_percent, reason, payload_json
+                ) VALUES (
+                    '2026-09-19T14:30:00Z', '2026-09-19T14:30:00Z',
+                    'legacy-device', 'Legacy restaurant', 'heartbeat',
+                    1, 88, 'legacy', '{"legacy": true}'
+                );
+                """
+            )
+
+        powerwatch.init_db()
+        powerwatch.init_db()
+
+        with closing(powerwatch.connect()) as db:
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(events)")}
+            indexes = {row["name"] for row in db.execute("PRAGMA index_list(events)")}
+            legacy = db.execute(
+                "SELECT installation_id, payload_json, event_id FROM events WHERE installation_id = ?",
+                ("legacy-device",),
+            ).fetchone()
+
+        self.assertIn("event_id", columns)
+        self.assertIn("idx_events_event_id", indexes)
+        self.assertEqual(legacy["installation_id"], "legacy-device")
+        self.assertEqual(legacy["payload_json"], '{"legacy": true}')
+        self.assertIsNone(legacy["event_id"])
 
     def test_duplicate_event_id_is_recorded_once(self):
         payload = self.payload("power_lost", False)
