@@ -181,6 +181,22 @@ class PowerWatchServerTests(unittest.TestCase):
                     'legacy-device', 'Legacy restaurant', 'heartbeat',
                     1, 88, 'legacy', '{"legacy": true}'
                 );
+                INSERT INTO events (
+                    received_at, event_timestamp, installation_id, device_name,
+                    event_type, external_power, battery_percent, reason, payload_json
+                ) VALUES (
+                    '2026-09-19T14:31:00Z', '2026-09-19T14:31:00Z',
+                    'legacy-device', 'Legacy restaurant', 'power_lost',
+                    0, 87, 'legacy', '{"event_id": "historic-event-id"}'
+                );
+                INSERT INTO events (
+                    received_at, event_timestamp, installation_id, device_name,
+                    event_type, external_power, battery_percent, reason, payload_json
+                ) VALUES (
+                    '2026-09-19T14:32:00Z', '2026-09-19T14:32:00Z',
+                    'legacy-device', 'Legacy restaurant', 'power_lost',
+                    0, 86, 'legacy duplicate', '{"event_id": "historic-event-id"}'
+                );
                 """
             )
 
@@ -191,15 +207,21 @@ class PowerWatchServerTests(unittest.TestCase):
             columns = {row["name"] for row in db.execute("PRAGMA table_info(events)")}
             indexes = {row["name"] for row in db.execute("PRAGMA index_list(events)")}
             legacy = db.execute(
-                "SELECT installation_id, payload_json, event_id FROM events WHERE installation_id = ?",
-                ("legacy-device",),
+                "SELECT installation_id, payload_json, event_id FROM events WHERE id = 1"
             ).fetchone()
+            event_count = db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            backfilled_count = db.execute(
+                "SELECT COUNT(*) FROM events WHERE event_id = ?",
+                ("historic-event-id",),
+            ).fetchone()[0]
 
         self.assertIn("event_id", columns)
         self.assertIn("idx_events_event_id", indexes)
+        self.assertEqual(event_count, 3)
         self.assertEqual(legacy["installation_id"], "legacy-device")
         self.assertEqual(legacy["payload_json"], '{"legacy": true}')
         self.assertIsNone(legacy["event_id"])
+        self.assertEqual(backfilled_count, 1)
 
     def test_duplicate_event_id_is_recorded_once(self):
         payload = self.payload("power_lost", False)

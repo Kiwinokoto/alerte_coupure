@@ -56,6 +56,35 @@ def connect() -> sqlite3.Connection:
     return connection
 
 
+def normalize_event_id(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    return str(payload.get("event_id", "")).strip()[:128] or None
+
+
+def backfill_event_ids(db: sqlite3.Connection) -> None:
+    known = {
+        row["event_id"]
+        for row in db.execute("SELECT event_id FROM events WHERE event_id IS NOT NULL")
+    }
+    rows = db.execute(
+        "SELECT id, payload_json FROM events WHERE event_id IS NULL ORDER BY id"
+    ).fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        event_id = normalize_event_id(payload)
+        if event_id is None or event_id in known:
+            continue
+        db.execute(
+            "UPDATE events SET event_id = ? WHERE id = ?",
+            (event_id, row["id"]),
+        )
+        known.add(event_id)
+
+
 def init_db() -> None:
     with closing(connect()) as db, db:
         db.executescript(
@@ -91,7 +120,11 @@ def init_db() -> None:
         columns = {row["name"] for row in db.execute("PRAGMA table_info(events)")}
         if "event_id" not in columns:
             db.execute("ALTER TABLE events ADD COLUMN event_id TEXT")
-        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_events_event_id ON events (event_id) WHERE event_id IS NOT NULL")
+        backfill_event_ids(db)
+        db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_events_event_id "
+            "ON events (event_id) WHERE event_id IS NOT NULL"
+        )
 
 
 def bool_to_db(value: Any) -> int | None:
@@ -223,7 +256,7 @@ def record_event(payload: dict[str, Any]) -> tuple[sqlite3.Row | None, bool, boo
     battery_percent = payload.get("battery_percent")
     reason = str(payload.get("reason", ""))[:500]
     event_timestamp = str(payload.get("timestamp_utc", ""))[:100]
-    event_id = str(payload.get("event_id", "")).strip()[:128] or None
+    event_id = normalize_event_id(payload)
 
     with closing(connect()) as db, db:
         previous = db.execute(
