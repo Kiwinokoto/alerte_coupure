@@ -2,6 +2,7 @@ package com.kiwinokoto.powerwatch
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
@@ -178,8 +179,7 @@ class MainActivity : Activity() {
             textSize = 18f
             setOnClickListener {
                 if (MonitorPrefs.isArmed(this@MainActivity)) {
-                    stopMonitor()
-                    toast("Surveillance désactivée.")
+                    confirmDisarmAndQuit()
                 } else if (saveSettings()) {
                     startMonitor()
                     toast("Surveillance activée. La notification PowerWatch doit rester visible.")
@@ -283,7 +283,7 @@ class MainActivity : Activity() {
         deliveryText.text = "Dernier contact serveur : " + MonitorPrefs.lastDelivery(this)
         eventsText.text = EventLog.recent(this)
         toggleButton.text = if (armed) {
-            "Désactiver la surveillance"
+            "Désarmer et quitter"
         } else {
             "Activer la surveillance"
         }
@@ -312,6 +312,22 @@ class MainActivity : Activity() {
         MonitorPrefs.setWebhookUrl(this, webhook)
         MonitorPrefs.setWebhookToken(this, token)
         return true
+    }
+
+    private fun confirmDisarmAndQuit() {
+        AlertDialog.Builder(this)
+            .setTitle("Désarmer PowerWatch ?")
+            .setMessage(
+                "La surveillance des coupures s’arrêtera complètement. " +
+                    "Fermer ou balayer simplement l’application ne l’arrête pas."
+            )
+            .setNegativeButton("Annuler", null)
+            .setPositiveButton("Désarmer et quitter") { _, _ ->
+                stopMonitor()
+                toast("Surveillance désactivée.")
+                finishAndRemoveTask()
+            }
+            .show()
     }
 
     private fun startMonitor() {
