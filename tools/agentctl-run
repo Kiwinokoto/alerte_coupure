@@ -11,9 +11,9 @@ Scopes:
   device    device:oneplus7t
   service   service:powerwatch-api
   db        db:powerwatch
-  deploy    deploy:vps-personal/powerwatch
-  backend   service + db + deploy
-  all       all PowerWatch resources
+  deploy    deploy:vps-personal/powerwatch + host:vps-personal/docker
+  backend   service + db + deploy + shared Docker host
+  all       all PowerWatch resources + shared Docker host
 
 OWNER may also be supplied through AGENTCTL_OWNER.
 EOF
@@ -52,11 +52,15 @@ while [[ $# -gt 0 && "$1" != "--" ]]; do
     device) add_resource "device:oneplus7t" ;;
     service) add_resource "service:powerwatch-api" ;;
     db) add_resource "db:powerwatch" ;;
-    deploy) add_resource "deploy:vps-personal/powerwatch" ;;
+    deploy)
+      add_resource "deploy:vps-personal/powerwatch"
+      add_resource "host:vps-personal/docker"
+      ;;
     backend)
       add_resource "service:powerwatch-api"
       add_resource "db:powerwatch"
       add_resource "deploy:vps-personal/powerwatch"
+      add_resource "host:vps-personal/docker"
       ;;
     all)
       add_resource "repo:Kiwinokoto/alerte_coupure"
@@ -64,6 +68,7 @@ while [[ $# -gt 0 && "$1" != "--" ]]; do
       add_resource "service:powerwatch-api"
       add_resource "db:powerwatch"
       add_resource "deploy:vps-personal/powerwatch"
+      add_resource "host:vps-personal/docker"
       ;;
     -h|--help) usage; exit 0 ;;
     *) echo "agentctl-run: unknown scope: $1" >&2; usage; exit 2 ;;

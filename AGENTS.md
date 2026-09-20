@@ -8,13 +8,13 @@ Before any mutation:
 3. Run `agentctl status` and check for active/stale sessions or leases affecting the resource you need.
 4. Never overwrite unexplained local work or bypass an active lease.
 
-Read-only inspection does not require a lease. Mutations should use `tools/agentctl-run` with the smallest applicable scope:
+Read-only inspection does not require a lease. Mutations should use `tools/agentctl-run` with the smallest applicable scope. Any mutation that invokes Docker on the personal VPS must also own `host:vps-personal/docker`; the wrapper adds it automatically to `deploy`, `backend` and `all`:
 - `repo`: repository files/Git state.
 - `device`: the OnePlus 7T via ADB.
 - `service`: PowerWatch API runtime/service.
 - `db`: PowerWatch database.
-- `deploy`: personal-VPS PowerWatch deployment target.
-- `backend`: shorthand for service + db + deploy.
+- `deploy`: personal-VPS PowerWatch deployment target + shared VPS Docker mutex.
+- `backend`: shorthand for service + db + deploy; Docker deploy work also takes the shared host mutex.
 - `all`: every PowerWatch mutable resource.
 
 Example:
