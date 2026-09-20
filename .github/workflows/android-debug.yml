@@ -38,8 +38,10 @@ jobs:
 
       - name: Install Android API 36
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36"
+          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36"
 
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
