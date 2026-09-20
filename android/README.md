@@ -125,7 +125,7 @@ Power-loss/restoration and manual events retry delivery a few times so a Wi-Fi-t
 
 - continue physical-device and long-duration reliability testing;
 - configure and test outbound alert delivery;
-- add a persistent on-device event outbox and design/test direct-SMS fallback for confirmed power loss when backend delivery fails;
+- validate the persistent on-device event outbox/replay on the physical OnePlus and design/test direct-SMS fallback for confirmed power loss when backend delivery fails;
 - design an explicit **Désarmer et quitter** action with a danger-style confirmation; swiping the UI away must continue to leave an armed foreground monitor running;
 - decide the small set of officially supported phone models;
 - assign a dedicated production hostname;
@@ -149,13 +149,14 @@ The exact V2/V3 sequencing is deliberately open. The customer-facing status view
 
 ## Overnight handoff (2026-09-19 → 2026-09-20)
 
-- **Reference:** dev/android-v1 code commit a9dfa96 (Persist events before webhook configuration) before this handoff update.
-- **Completed:** retry idempotence, persistent Android outbox/replay and the Gradle 8.13 wrapper remain published. This pass closed a durability gap: non-heartbeat events are now persisted before webhook configuration is checked, so an outage/restoration is retained even when the endpoint is temporarily blank or misconfigured instead of being dropped before reaching the outbox. Heartbeats remain ephemeral.
-- **Tests:** server suite previously passed **8/8** using the existing server-api Docker image; git diff --check passes. A targeted static ordering check confirms EventOutbox.enqueue occurs before the blank-webhook early return and persistence still excludes heartbeats. Full Android compilation/unit tests remain unrun because the workstation has JDK 11 and no Android SDK 36.
-- **VPS:** /opt/powerwatch was clean at b9df88e at the start of this pass; powerwatch-api was healthy. It was not advanced/restarted/redeployed because this change is Android-only. No live DB migration has been applied.
-- **Next:** (1) build/install with JDK 17 + Android SDK 36 on the OnePlus; (2) test backend unavailable or endpoint blank → power event persisted → app/process restart → backend recovery/config restoration → exactly-once server record; (3) add targeted Android persistence/replay tests once the Android build path is available; (4) then harden outbox corruption/size handling and continue degraded-backend UI/state work; (5) leave actual SMS delivery for an explicit later decision/test.
-- **Risk/debt:** the V1 outbox uses a private SharedPreferences JSON queue with no retention cap and malformed stored JSON currently reads as an empty queue. That corruption behavior can hide queued events and should be hardened after device validation rather than mixed into this small fix.
-- **Migration/deploy note:** server idempotence adds events.event_id plus a unique partial index through startup init_db(). This is additive/backward-compatible and still **not applied to the live DB**, because no unattended restart/deploy was performed.
+- **Reference:** `dev/android-v1` at `3923556` before this handoff update; workstation clone matched `origin/dev/android-v1` and was clean.
+- **Completed:** retry idempotence, persistent Android outbox/replay, persistence-before-webhook-validation and Gradle 8.13 wrapper remain published. This pass established a reproducible Android build environment without system changes: Android SDK 36/build-tools were installed under the workstation user cache and JDK 17 is supplied by a disposable Docker image.
+- **Tests:** `./gradlew --no-daemon testDebugUnitTest assembleDebug` completed **BUILD SUCCESSFUL** with 38 tasks executed. There are currently no Android unit-test sources (`testDebugUnitTest NO-SOURCE`), so this validates compilation/packaging, not outbox behavior. `git diff --check` passed before the build.
+- **Device:** the OnePlus 7T (`HD1903`) is reachable over ADB Wi-Fi; installed PowerWatch is 0.1.0 and `MonitorService` was still foreground. The newly built APK was deliberately **not installed unattended**, because replacing the running package would interrupt the currently armed monitor and the outbox scenario should be observed explicitly.
+- **VPS:** `/opt/powerwatch` was clean but intentionally behind GitHub at `b9df88e`; `powerwatch-api` was healthy. No restart/redeploy and no live DB migration were performed.
+- **Next:** (1) during an attended device test, install the current debug APK while preserving configuration, re-arm if package replacement stops the service, then verify backend unavailable or endpoint blank → power event persisted → app/process restart → backend recovery/config restoration → exactly one server record; (2) add targeted automated outbox persistence/replay tests, choosing a lightweight Android test strategy rather than adding a large framework casually; (3) harden malformed-outbox and retention behavior; (4) continue degraded-backend UI/state work; (5) leave actual SMS delivery for an explicit later decision/test.
+- **Risk/debt:** the V1 outbox is a private SharedPreferences JSON queue with no retention cap; malformed stored JSON currently becomes an empty in-memory queue and can hide pending events. Gradle reports deprecated features that will matter for Gradle 9, but they do not block the current 8.13 build.
+- **Migration/deploy note:** server idempotence adds `events.event_id` plus a unique partial index through startup `init_db()`. This is additive/backward-compatible and still **not applied to the live DB**, because no unattended restart/deploy was performed.
 
 ## Reliability test plan
 
