@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  tools/agentctl-run [--owner OWNER] SCOPE... -- COMMAND [ARG...]
+
+Scopes:
+  repo      repo:Kiwinokoto/alerte_coupure
+  device    device:oneplus7t
+  service   service:powerwatch-api
+  db        db:powerwatch
+  deploy    deploy:vps-personal/powerwatch
+  backend   service + db + deploy
+  all       all PowerWatch resources
+
+OWNER may also be supplied through AGENTCTL_OWNER.
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+owner="${AGENTCTL_OWNER:-}"
+if [[ "${1:-}" == "--owner" ]]; then
+  [[ $# -ge 2 ]] || { usage; exit 2; }
+  owner="$2"
+  shift 2
+fi
+[[ -n "$owner" ]] || {
+  echo "agentctl-run: --owner or AGENTCTL_OWNER is required" >&2
+  usage
+  exit 2
+}
+
+declare -A seen=()
+resource_args=()
+add_resource() {
+  local resource="$1"
+  if [[ -z "${seen[$resource]+x}" ]]; then
+    seen["$resource"]=1
+    resource_args+=(--resource "$resource")
+  fi
+}
+
+while [[ $# -gt 0 && "$1" != "--" ]]; do
+  case "$1" in
+    repo) add_resource "repo:Kiwinokoto/alerte_coupure" ;;
+    device) add_resource "device:oneplus7t" ;;
+    service) add_resource "service:powerwatch-api" ;;
+    db) add_resource "db:powerwatch" ;;
+    deploy) add_resource "deploy:vps-personal/powerwatch" ;;
+    backend)
+      add_resource "service:powerwatch-api"
+      add_resource "db:powerwatch"
+      add_resource "deploy:vps-personal/powerwatch"
+      ;;
+    all)
+      add_resource "repo:Kiwinokoto/alerte_coupure"
+      add_resource "device:oneplus7t"
+      add_resource "service:powerwatch-api"
+      add_resource "db:powerwatch"
+      add_resource "deploy:vps-personal/powerwatch"
+      ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "agentctl-run: unknown scope: $1" >&2; usage; exit 2 ;;
+  esac
+  shift
+done
+
+[[ ${#resource_args[@]} -gt 0 ]] || {
+  echo "agentctl-run: at least one scope is required" >&2
+  usage
+  exit 2
+}
+[[ "${1:-}" == "--" ]] || {
+  echo "agentctl-run: missing -- before command" >&2
+  usage
+  exit 2
+}
+shift
+[[ $# -gt 0 ]] || {
+  echo "agentctl-run: command is required" >&2
+  usage
+  exit 2
+}
+
+command -v agentctl >/dev/null 2>&1 || {
+  echo "agentctl-run: agentctl is not installed or not in PATH" >&2
+  exit 127
+}
+
+exec agentctl run --owner "$owner" "${resource_args[@]}" -- "$@"
