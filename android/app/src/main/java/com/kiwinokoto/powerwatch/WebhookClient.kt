@@ -63,8 +63,32 @@ object WebhookClient {
 
         val url = MonitorPrefs.webhookUrl(appContext)
         if (url.isBlank()) {
-            if (criticalFallback) FallbackTracker.markEligible(appContext, eventId, eventType)
-            MonitorPrefs.setLastDelivery(appContext, "Webhook non configuré · événement conservé localement")
+            if (criticalFallback) {
+                val wakeLock = acquireCriticalDeliveryWakeLock(appContext)
+                executor.execute {
+                    try {
+                        val fallback = submitFallback(
+                            appContext,
+                            eventId,
+                            payload,
+                            eventType
+                        )
+                        MonitorPrefs.setLastDelivery(
+                            appContext,
+                            Instant.now().toString() + " · " + eventType +
+                                " · webhook non configuré · " +
+                                SmsFallback.statusLabel(fallback)
+                        )
+                    } finally {
+                        if (wakeLock.isHeld) wakeLock.release()
+                    }
+                }
+            } else {
+                MonitorPrefs.setLastDelivery(
+                    appContext,
+                    "Webhook non configuré · événement conservé localement"
+                )
+            }
             return
         }
 
@@ -100,12 +124,24 @@ object WebhookClient {
                     }
                 }
 
-                if (criticalFallback) {
-                    FallbackTracker.markEligible(appContext, eventId, eventType)
+                val fallback = if (criticalFallback) {
+                    submitFallback(appContext, eventId, payload, eventType)
+                } else {
+                    null
                 }
                 MonitorPrefs.setLastDelivery(
                     appContext,
-                    "${Instant.now()} · $eventType · ÉCHEC · $lastError"
+                    buildString {
+                        append(Instant.now())
+                        append(" · ")
+                        append(eventType)
+                        append(" · ÉCHEC · ")
+                        append(lastError)
+                        fallback?.let {
+                            append(" · ")
+                            append(SmsFallback.statusLabel(it))
+                        }
+                    }
                 )
             } finally {
                 deliveryWakeLock?.let { wakeLock ->
@@ -214,17 +250,31 @@ object WebhookClient {
                     FallbackTracker.clear(context, event.eventId)
                 } else {
                     criticalEventType?.let {
-                        FallbackTracker.markEligible(context, event.eventId, it)
+                        submitFallback(context, event.eventId, event.payload, it)
                     }
                     return
                 }
             } catch (_: Exception) {
                 criticalEventType?.let {
-                    FallbackTracker.markEligible(context, event.eventId, it)
+                    submitFallback(context, event.eventId, event.payload, it)
                 }
                 return
             }
         }
+    }
+
+    private fun submitFallback(
+        context: Context,
+        eventId: String,
+        payload: String,
+        eventType: String
+    ): SmsFallbackResult {
+        FallbackTracker.markEligible(context, eventId, eventType)
+        val result = SmsFallback.submitIfEnabled(context, eventId, payload)
+        if (SmsFallback.handled(result)) {
+            FallbackTracker.clear(context, eventId)
+        }
+        return result
     }
 
     private fun post(context: Context, endpoint: String, payload: String): Int {
