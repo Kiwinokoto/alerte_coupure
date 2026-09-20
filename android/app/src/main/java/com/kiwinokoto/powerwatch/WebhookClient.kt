@@ -19,17 +19,17 @@ object WebhookClient {
         reason: String
     ) {
         val appContext = context.applicationContext
-        val url = MonitorPrefs.webhookUrl(appContext)
-        if (url.isBlank()) {
-            MonitorPrefs.setLastDelivery(appContext, "Webhook non configuré")
-            return
-        }
-
         val eventId = UUID.randomUUID().toString()
         val eventTimestamp = Instant.now().toString()
         val payload = buildPayload(appContext, eventType, snapshot, reason, eventId, eventTimestamp)
         val persistent = eventType != "heartbeat"
         if (persistent) EventOutbox.enqueue(appContext, eventId, payload)
+
+        val url = MonitorPrefs.webhookUrl(appContext)
+        if (url.isBlank()) {
+            MonitorPrefs.setLastDelivery(appContext, "Webhook non configuré · événement conservé localement")
+            return
+        }
 
         executor.execute {
             replayOutbox(appContext, url, eventId)
