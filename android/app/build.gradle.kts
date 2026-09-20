@@ -6,6 +6,17 @@ val debugWebhookUrl =
 val debugWebhookToken =
     providers.gradleProperty("POWERWATCH_DEFAULT_WEBHOOK_TOKEN").orElse("").get()
 
+val releaseStoreFile = providers.environmentVariable("POWERWATCH_RELEASE_STORE_FILE").orNull
+val releaseStorePassword = providers.environmentVariable("POWERWATCH_RELEASE_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("POWERWATCH_RELEASE_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("POWERWATCH_RELEASE_KEY_PASSWORD").orNull
+val releaseSigningValues =
+    listOf(releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+val releaseSigningConfigured = releaseSigningValues.all { !it.isNullOrBlank() }
+require(releaseSigningValues.none { !it.isNullOrBlank() } || releaseSigningConfigured) {
+    "PowerWatch release signing is only partially configured. Set all POWERWATCH_RELEASE_* variables or none."
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -27,6 +38,17 @@ android {
         buildConfig = true
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         getByName("debug") {
             buildConfigField(
@@ -44,6 +66,9 @@ android {
         getByName("release") {
             buildConfigField("String", "POWERWATCH_DEFAULT_WEBHOOK_URL", "\"\"")
             buildConfigField("String", "POWERWATCH_DEFAULT_WEBHOOK_TOKEN", "\"\"")
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
