@@ -31,6 +31,7 @@ class MonitorService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var stablePower: Boolean? = null
+    private var lastNotificationSignature: String? = null
     private var pendingCandidate: Boolean? = null
     private var pendingTransition: Runnable? = null
     private var receiverRegistered = false
@@ -212,6 +213,7 @@ class MonitorService : Service() {
 
     private fun startInForeground(snapshot: PowerSnapshot) {
         val notification = buildNotification(snapshot)
+        lastNotificationSignature = notificationSignature(snapshot)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 NOTIFICATION_ID,
@@ -224,9 +226,16 @@ class MonitorService : Service() {
     }
 
     private fun refreshNotification(snapshot: PowerSnapshot) {
+        val signature = notificationSignature(snapshot)
+        if (signature == lastNotificationSignature) return
+
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, buildNotification(snapshot))
+        lastNotificationSignature = signature
     }
+
+    private fun notificationSignature(snapshot: PowerSnapshot): String =
+        "${snapshot.externalPower}:${snapshot.batteryPercent}"
 
     private fun buildNotification(snapshot: PowerSnapshot): Notification {
         val openIntent = PendingIntent.getActivity(
