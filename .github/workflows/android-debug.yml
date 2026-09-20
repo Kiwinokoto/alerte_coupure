@@ -4,11 +4,21 @@ on:
   push:
     branches: [dev/android-v1]
     paths:
-      - "android/**"
+      - "android/app/**"
+      - "android/gradle/**"
+      - "android/gradlew"
+      - "android/gradlew.bat"
+      - "android/*.gradle.kts"
+      - "android/gradle.properties"
       - ".github/workflows/android-debug.yml"
   pull_request:
     paths:
-      - "android/**"
+      - "android/app/**"
+      - "android/gradle/**"
+      - "android/gradlew"
+      - "android/gradlew.bat"
+      - "android/*.gradle.kts"
+      - "android/gradle.properties"
       - ".github/workflows/android-debug.yml"
   workflow_dispatch:
 
