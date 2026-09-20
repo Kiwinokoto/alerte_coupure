@@ -25,6 +25,8 @@ object MonitorPrefs {
     private const val KEY_REMOTE_ALERT_SUMMARY = "remote_alert_summary"
     private const val KEY_BACKEND_HEALTH = "backend_health"
     private const val KEY_BACKEND_LAST_CONTACT = "backend_last_contact"
+    private const val KEY_FALLBACK_SMS_NUMBER = "fallback_sms_number"
+    private const val KEY_FALLBACK_SMS_ENABLED = "fallback_sms_enabled"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -143,6 +145,24 @@ object MonitorPrefs {
     fun markBackendUnreachable(context: Context) {
         prefs(context).edit()
             .putString(KEY_BACKEND_HEALTH, BackendHealth.UNREACHABLE.name)
+            .apply()
+    }
+
+    fun fallbackSmsNumber(context: Context): String =
+        prefs(context).getString(KEY_FALLBACK_SMS_NUMBER, "") ?: ""
+
+    fun setFallbackSmsNumber(context: Context, value: String) {
+        prefs(context).edit()
+            .putString(KEY_FALLBACK_SMS_NUMBER, value.trim())
+            .apply()
+    }
+
+    fun fallbackSmsEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_FALLBACK_SMS_ENABLED, false)
+
+    fun setFallbackSmsEnabled(context: Context, value: Boolean) {
+        prefs(context).edit()
+            .putBoolean(KEY_FALLBACK_SMS_ENABLED, value)
             .apply()
     }
 }
